@@ -1,25 +1,33 @@
-import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { View, StyleSheet } from 'react-native';
 import Animated, {
   SlideInRight,
   SlideInLeft,
   SlideOutRight,
   SlideOutLeft,
 } from 'react-native-reanimated';
+import { setupApi } from '../../api';
+import IntroWelcomeScreen from './IntroWelcomeScreen';
 import CompanionSelectScreen from './CompanionSelectScreen';
 import DOBSelectScreen from './DOBSelectScreen';
 import SetupPowerScreen from './SetupPowerScreen';
 import SetupCraftScreen from './SetupCraftScreen';
 import SetupMindScreen from './SetupMindScreen';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-type Step = 0 | 1 | 2 | 3 | 4;
+type Step = 0 | 1 | 2 | 3 | 4 | 5;
 type Direction = 'forward' | 'back';
 
-const SCREEN_NAMES = ['CompanionSelect', 'DOBSelect', 'SetupPower', 'SetupCraft', 'SetupMind'] as const;
+const SCREEN_NAMES = [
+  'IntroWelcome',
+  'CompanionSelect',
+  'DOBSelect',
+  'SetupPower',
+  'SetupCraft',
+  'SetupMind',
+] as const;
 
 const screens = [
+  IntroWelcomeScreen,
   CompanionSelectScreen,
   DOBSelectScreen,
   SetupPowerScreen,
@@ -32,9 +40,30 @@ const OnboardingWizard: React.FC = () => {
   const [direction, setDirection] = useState<Direction>('forward');
   const [isAnimating, setIsAnimating] = useState(false);
   const [routeParams, setRouteParams] = useState<any>({});
+  const [introChecked, setIntroChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: progress } = await setupApi.getProgress();
+        // Skip intro only once a companion has been chosen
+        if (!cancelled && progress.selectedCompanion) {
+          setCurrentStep(1);
+        }
+      } catch {
+        // If the request fails just show the intro
+      } finally {
+        if (!cancelled) setIntroChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const next = useCallback(() => {
-    if (isAnimating || currentStep >= 4) return;
+    if (isAnimating || currentStep >= 5) return;
     setIsAnimating(true);
     setDirection('forward');
     setCurrentStep((prev) => (prev + 1) as Step);
@@ -141,6 +170,10 @@ const OnboardingWizard: React.FC = () => {
       </Animated.View>
     );
   }, [currentStep, direction, navigation, route]);
+
+  if (!introChecked) {
+    return <View style={styles.container} />;
+  }
 
   return (
     <View style={styles.container}>

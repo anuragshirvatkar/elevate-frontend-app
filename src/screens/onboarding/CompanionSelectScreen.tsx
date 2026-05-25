@@ -63,6 +63,8 @@ const CompanionSelectScreen: React.FC<
           setCompanions(options.companions);
           if (progress.selectedCompanion) {
             setSelected(progress.selectedCompanion.id);
+          } else if (options.companions.length > 0) {
+            setSelected(options.companions[0].id);
           }
           setLoading(false);
           return;
@@ -115,6 +117,9 @@ const CompanionSelectScreen: React.FC<
         // Load companions for selection
         const { data: options } = await setupApi.getOptions();
         setCompanions(options.companions);
+        if (options.companions.length > 0) {
+          setSelected(options.companions[0].id);
+        }
         setLoading(false);
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -128,18 +133,29 @@ const CompanionSelectScreen: React.FC<
   const handleScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / screenWidth);
+    if (index !== currentIndex) {
+      setCurrentIndex(index);
+      if (companions[index]) {
+        setSelected(companions[index].id);
+      }
+    }
+  };
+
+  const scrollToIndex = (index: number) => {
+    scrollRef.current?.scrollTo({ x: index * screenWidth, animated: true });
     setCurrentIndex(index);
+    if (companions[index]) {
+      setSelected(companions[index].id);
+    }
   };
 
   const handleContinue = async () => {
-    if (!selected) {
-      Alert.alert('Error', 'Please select a companion first');
-      return;
-    }
+    const currentId = selected ?? companions[0]?.id;
+    if (!currentId) return;
     setSaving(true);
     try {
       console.log('Saving companion selection:', selected);
-      await setupApi.saveProgress({ companionId: selected });
+      await setupApi.saveProgress({ companionId: selected ?? companions[0]?.id });
       console.log('Successfully saved companion selection');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.navigate('DOBSelect');
@@ -207,15 +223,12 @@ const CompanionSelectScreen: React.FC<
         style={styles.carousel}
       >
         {companions.map((item) => {
-          const isSelected = selected === item.id;
           const companionColor = getCompanionColor(item.name);
 
           return (
             <View key={item.id} style={[styles.page, { width: screenWidth }]}>
               <View style={styles.cardWrapper}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => setSelected(item.id)}
+                <View
                   style={[
                     styles.imageCard,
                     {
@@ -237,22 +250,7 @@ const CompanionSelectScreen: React.FC<
                   ) : (
                     <Text style={styles.emoji}>🏴‍☠️</Text>
                   )}
-                </TouchableOpacity>
-
-                {/* Selection badge – placed outside imageCard to avoid clipping */}
-                {isSelected && (
-                  <View
-                    style={[
-                      styles.selectionBadge,
-                      {
-                        backgroundColor: companionColor,
-                        shadowColor: companionColor,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.selectionBadgeText}>✓</Text>
-                  </View>
-                )}
+                </View>
               </View>
 
               <Text style={styles.companionName}>{item.name}</Text>
@@ -268,23 +266,46 @@ const CompanionSelectScreen: React.FC<
 
       {/* Footer section with padding */}
       <View style={styles.footerContainer}>
-        <View style={styles.indicatorContainer}>
-          {companions.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.indicator,
-                i === currentIndex && styles.indicatorActive,
-              ]}
-            />
-          ))}
+        {/* Avatar preview strip */}
+        <View style={styles.avatarStrip}>
+          {companions.map((item, i) => {
+            const isActive = i === currentIndex;
+            const companionColor = getCompanionColor(item.name);
+            return (
+              <TouchableOpacity
+                key={item.id}
+                onPress={() => scrollToIndex(i)}
+                activeOpacity={0.75}
+                style={[
+                  styles.avatarThumb,
+                  isActive && {
+                    borderColor: companionColor,
+                    borderWidth: 2,
+                    transform: [{ scale: 1.15 }],
+                  },
+                ]}
+              >
+                {item.image ? (
+                  <Image
+                    source={{ uri: item.image }}
+                    style={styles.avatarThumbImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarThumbEmoji}>🏴‍☠️</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        <Text style={styles.swipeHint}>Swipe to explore · tap to jump</Text>
+
         <View style={styles.footer}>
           <Button
             title="Continue"
             onPress={handleContinue}
             loading={saving}
-            disabled={!selected}
             fullWidth
             size="lg"
           />
@@ -379,28 +400,6 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
     flex: 1,
   },
-  selectionBadge: {
-    position: 'absolute',
-    top: -8,        // half outside the card
-    right: -8,      // half outside the card
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
-    zIndex: 20,
-  },
-  selectionBadgeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 10,
-  },
   companionName: {
     ...typography.h3,
     color: '#fff',
@@ -418,23 +417,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: 20,
   },
-  indicatorContainer: {
+  avatarStrip: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 20,
-    gap: 8,
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+    paddingVertical: 8,
   },
-  indicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#333',
+  avatarThumb: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a1a',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  indicatorActive: {
-    backgroundColor: '#fff',
+  avatarThumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarThumbEmoji: {
+    fontSize: 22,
+    textAlign: 'center',
+    lineHeight: 46,
+  },
+  swipeHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.3)',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: 0.3,
   },
   footer: {
-    paddingVertical: 10,
+    paddingVertical: 4,
   },
 });
 

@@ -1,10 +1,46 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+
+console.log('[Backend] Configured API base URL:', API_BASE_URL);
+
+/** Ping backend root on app start (expects e.g. "Hello world" from GET /). */
+export async function verifyBackendConnection(): Promise<boolean> {
+  const divider = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+  console.log(divider);
+  console.log('[Backend] Checking connection…');
+  console.log('[Backend] Target:', API_BASE_URL);
+
+  try {
+    const response = await axios.get(API_BASE_URL, {
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+    const body =
+      typeof response.data === 'string'
+        ? response.data
+        : JSON.stringify(response.data);
+
+    console.log('[Backend] ✅ CONNECTED');
+    console.log('[Backend] HTTP status:', response.status);
+    console.log('[Backend] Response body:', body);
+    console.log(divider);
+    return true;
+  } catch (error) {
+    const err = error as AxiosError;
+    console.log('[Backend] ❌ NOT CONNECTED');
+    console.log('[Backend] Error:', err.message);
+    if (err.code) console.log('[Backend] Code:', err.code);
+    console.log('[Backend] Tip: backend must listen on 0.0.0.0, same Wi‑Fi, firewall open');
+    console.log(divider);
+    return false;
+  }
+}
 
 export const apiClient = axios.create({
-  baseURL: BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -15,12 +51,13 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const fullUrl = `${config.baseURL ?? API_BASE_URL}${config.url ?? ''}`;
   console.log('🚀 API Request:', {
     method: config.method?.toUpperCase(),
-    url: config.url,
+    fullUrl,
     baseURL: config.baseURL,
-    headers: config.headers,
-    data: JSON.stringify(config.data, null, 2),
+    path: config.url,
+    hasAuth: Boolean(config.headers.Authorization),
   });
   return config;
 });
@@ -71,7 +108,7 @@ apiClient.interceptors.response.use(
         const refreshToken = await AsyncStorage.getItem('refreshToken');
         if (!refreshToken) throw new Error('No refresh token');
 
-        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
         await AsyncStorage.setItem('accessToken', data.accessToken);
         processQueue(null, data.accessToken);
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;

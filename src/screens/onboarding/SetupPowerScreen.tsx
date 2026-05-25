@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Animated, Alert, Image, Modal, TextInput, Platform
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
@@ -12,6 +13,9 @@ import { setupApi, activitiesApi } from '../../api';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
 import type { ActivityDto, CompanionDto } from '../../types';
+import BicepIcon from '../../../assets/bicep.svg';
+
+const POWER_INTRO_SEEN_KEY = 'onboarding_power_intro_seen';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -100,6 +104,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
   const [customModalVisible, setCustomModalVisible] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customCreating, setCustomCreating] = useState(false);
+  const [powerIntroVisible, setPowerIntroVisible] = useState(false);
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -153,8 +158,13 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
           setTimeDate(d);
         }
 
-        if ((power?.activities?.length ?? 0) > 0) {
+        const hasSavedActivities = (power?.activities?.length ?? 0) > 0;
+        if (hasSavedActivities) {
           setStep(2);
+          setPowerIntroVisible(false);
+        } else {
+          const introSeen = await AsyncStorage.getItem(POWER_INTRO_SEEN_KEY);
+          setPowerIntroVisible(introSeen !== 'true');
         }
 
       } catch (err) {
@@ -166,6 +176,12 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
     };
 
     loadData();
+  }, []);
+
+  const dismissPowerIntro = useCallback(async () => {
+    await AsyncStorage.setItem(POWER_INTRO_SEEN_KEY, 'true');
+    setPowerIntroVisible(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -710,6 +726,46 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
         </View>
       </View>
 
+      {/* Power pillar intro — first visit to workout selection */}
+      <Modal
+        visible={powerIntroVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={dismissPowerIntro}
+      >
+        <View style={styles.introOverlay}>
+          <View style={styles.introCard}>
+            <View style={styles.introIconWrap}>
+              <BicepIcon
+                width={40}
+                height={40}
+                fill={colors.text}
+                stroke={colors.text}
+                color={colors.text}
+              />
+            </View>
+
+            <Text style={styles.introTitle}>Power</Text>
+            <Text style={styles.introBody}>
+              This pillar focuses on your physical activities — what you do, when you rest, and when you train.
+            </Text>
+
+            <View style={styles.introBullets}>
+              <Text style={styles.introBullet}>• Collect points as you complete activities</Text>
+              <Text style={styles.introBullet}>• Personalized reminders to keep you moving</Text>
+              <Text style={styles.introBullet}>• Advanced analytics to measure your growth</Text>
+            </View>
+
+            <Button
+              title="Choose my activities"
+              onPress={dismissPowerIntro}
+              fullWidth
+              size="lg"
+            />
+          </View>
+        </View>
+      </Modal>
+
       {/* Custom Activity Modal */}
       <Modal
         animationType="slide"
@@ -942,6 +998,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingVertical: spacing.sm,
     paddingLeft: 4,
+  },
+
+  // Power intro modal
+  introOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  introCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.cardElevated,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    paddingTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  introIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: spacing.xs,
+  },
+  introTitle: {
+    ...typography.h3,
+    color: colors.text,
+    textAlign: 'center',
+    fontSize: 22,
+    marginTop: spacing.xs,
+  },
+  introBody: {
+    ...typography.bodySmall,
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: spacing.xs,
+    fontWeight: '600',
+  },
+  introBullets: {
+    marginVertical: spacing.sm,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  introBullet: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    fontSize: 14,
+    fontWeight: '400',
   },
 
   // Modal

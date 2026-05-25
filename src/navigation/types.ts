@@ -16,6 +16,7 @@ export type AuthStackParamList = {
 };
 
 export type OnboardingStackParamList = {
+  IntroWelcome: undefined;
   CompanionSelect: { skipRouting?: boolean } | undefined;
   DOBSelect: undefined;
   SetupPower: undefined;
