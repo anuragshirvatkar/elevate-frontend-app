@@ -6,7 +6,7 @@ export const companionApi = {
     apiClient.get<CompanionMessagesResponse>('/companion/messages', { params: { page, limit } }),
 
   markRead: (id: string) =>
-    apiClient.patch<CompanionMessage>(`/companion/messages/${id}/read`),
+    apiClient.patch<CompanionMessage>(`/companion-messages/${id}/read`),
 
   getUnreadCount: () =>
     apiClient.get<{ unreadCount: number }>('/companion/unread-count'),

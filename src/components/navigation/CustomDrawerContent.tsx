@@ -14,13 +14,12 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { label: 'Stats', icon: 'bar-chart-outline', screen: 'Stats' },
-  { label: 'Books', icon: 'book-outline', screen: 'Books' },
-  { label: 'Activities', icon: 'flash-outline', screen: 'Activities' },
-  { label: 'Messages', icon: 'chatbubble-outline', screen: 'CompanionMessages' },
+  { label: 'Analytics', icon: 'bar-chart-outline', screen: 'Analytics' },
+  { label: 'Pillars', icon: 'layers-outline', screen: 'Pillars' },
   { label: 'Achievements', icon: 'medal-outline', screen: 'Achievements' },
   { label: 'Support', icon: 'help-circle-outline', screen: 'Support' },
-  { label: 'Settings', icon: 'settings-outline', screen: 'Settings' },
+  { label: 'Point Rules', icon: 'star-outline', screen: 'PointRules' },
+  { label: 'About', icon: 'information-circle-outline', screen: 'About' },
 ];
 
 const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {

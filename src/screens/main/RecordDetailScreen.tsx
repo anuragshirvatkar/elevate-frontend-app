@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,16 +12,16 @@ import BrainIcon from '../../../assets/brain.svg';
 import CraftIcon from '../../../assets/craft.svg';
 import PurityIcon from '../../../assets/purity.svg';
 
-type RecordDetailParams = { date: string; logs: ActivityLogEntry[] };
+type RecordDetailParams = { date: string; logs: ActivityLogEntry[]; section?: string };
 type RecordDetailRoute = RouteProp<{ RecordDetail: RecordDetailParams }, 'RecordDetail'>;
 
-const SECTION_ICONS = { power: BicepIcon, mind: BrainIcon, craft: CraftIcon, purity: PurityIcon };
+const SECTION_ICONS: Record<string, React.FC<any>> = { power: BicepIcon, mind: BrainIcon, craft: CraftIcon, purity: PurityIcon };
 const SECTION_LABELS: Record<string, string> = {
   power: 'Power', craft: 'Craft', mind: 'Mind', purity: 'Purity',
 };
 
 const formatHours = (hours?: number): string => {
-  if (!hours || hours <= 0) return '';
+  if (!hours || hours <= 0) return '—';
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
   if (h > 0 && m > 0) return `${h}h ${m}m`;
@@ -29,12 +29,24 @@ const formatHours = (hours?: number): string => {
   return `${m}m`;
 };
 
+interface FieldRowProps { icon: string; iconColor: string; label: string; value: string; empty?: boolean; }
+const FieldRow = ({ icon, iconColor, label, value, empty }: FieldRowProps) => (
+  <View style={styles.fieldRow}>
+    <View style={styles.fieldIcon}>
+      <Ionicons name={icon as any} size={18} color={empty ? '#444' : '#ffffff'} />
+    </View>
+    <View style={styles.fieldBody}>
+      <Text style={[styles.fieldLabel, empty && { color: '#444' }]}>{label}</Text>
+      <Text style={[styles.fieldValue, empty && { color: '#444' }]}>{value}</Text>
+    </View>
+  </View>
+);
+
 const RecordDetailScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RecordDetailRoute>();
-  const { date, logs } = route.params;
+  const { date, logs, section: initialSection } = route.params;
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editSection, setEditSection] = useState<string | undefined>();
   const [bookTitles, setBookTitles] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -66,6 +78,56 @@ const RecordDetailScreen = () => {
     if (!sectionMap.has(log.section) || log.didUserDo) sectionMap.set(log.section, log);
   }
 
+  const section = (initialSection || 'power') as 'power' | 'craft' | 'mind' | 'purity';
+  const log = sectionMap.get(section);
+  const Icon = SECTION_ICONS[section];
+
+  const renderSectionFields = () => {
+    if (section === 'purity') {
+      const relapseCount = log?.relapseCount ?? null;
+      const isClean = log ? (relapseCount ?? 0) === 0 : null;
+      return (
+        <FieldRow
+          icon="shield-checkmark"
+          iconColor={isClean === true ? colors.success : '#FF4444'}
+          label="Did you stay clean?"
+          value={log ? (isClean ? 'Yes — Clean' : `No — ${relapseCount} relapse${relapseCount !== 1 ? 's' : ''}`) : '—'}
+          empty={!log}
+        />
+      );
+    }
+    if (section === 'mind') {
+      const bookTitle = log?.userBookId ? (bookTitles.get(log.userBookId) || log.userBookId) : null;
+      const didDo = log?.didUserDo;
+      return (
+        <>
+          <FieldRow icon="book" iconColor="#54A9FF" label="Did you read?" value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
+          <FieldRow icon="library" iconColor="#54A9FF" label="Book" value={bookTitle || '—'} empty={!bookTitle} />
+          <FieldRow icon="time-outline" iconColor="#54A9FF" label="Hours" value={log ? formatHours(log.hours) : '—'} empty={!log?.hours} />
+          <FieldRow icon="chatbubble-outline" iconColor="#54A9FF" label="Notes" value={log?.description || '—'} empty={!log?.description} />
+        </>
+      );
+    }
+    const didDo = log?.didUserDo;
+    const iconColor = section === 'power' ? '#FFC857' : '#3DFF86';
+    return (
+      <>
+        <FieldRow icon="checkmark-circle-outline" iconColor={iconColor} label={section === 'power' ? 'Did you train?' : 'Did you work on your craft?'} value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
+        <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={log ? formatHours(log.hours) : '—'} empty={!log?.hours} />
+        <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={log?.description || '—'} empty={!log?.description} />
+        {!didDo && <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log?.reasonIfNo || '—'} empty={!log?.reasonIfNo} />}
+        {log?.images && log.images.length > 0 && (
+          <View style={styles.imagesSection}>
+            <Text style={styles.imagesLabel}>Photos ({log.images.length})</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {log.images.map((uri, i) => <Image key={i} source={{ uri }} style={styles.thumbnail} />)}
+            </ScrollView>
+          </View>
+        )}
+      </>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -73,69 +135,29 @@ const RecordDetailScreen = () => {
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerDate}>{formatDate(date)}</Text>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditModal(true)} activeOpacity={0.7}>
+          <Ionicons name="create-outline" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionIconCircle}>
+          <Icon width={22} height={22} fill="#fff" stroke="#fff" color="#fff" />
+        </View>
+        <Text style={styles.sectionTitle}>{SECTION_LABELS[section]}</Text>
+        {!log && <Text style={styles.noRecordBadge}>No record</Text>}
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {(['power', 'craft', 'mind', 'purity'] as const).map(section => {
-          const log = sectionMap.get(section);
-          if (!log) return null;
-          const Icon = SECTION_ICONS[section];
-          const isCompleted = section === 'purity'
-            ? (log.relapseCount ?? 0) === 0
-            : !!log.didUserDo;
-          const hoursStr = formatHours(log.hours);
-          const bookTitle = section === 'mind' && log.userBookId
-            ? bookTitles.get(log.userBookId)
-            : undefined;
-
-          const parts: string[] = [];
-          parts.push(isCompleted ? 'Completed' : 'Missed');
-          if (hoursStr) parts.push(hoursStr);
-          if (section === 'purity') {
-            const r = log.relapseCount ?? 0;
-            parts.push(r === 0 ? 'Clean' : `${r} relapse${r !== 1 ? 's' : ''}`);
-          }
-          if (bookTitle) parts.push(bookTitle);
-
-          return (
-            <View key={section} style={styles.row}>
-              {/* White SVG icon — no circle */}
-              <View style={styles.iconCol}>
-                <Icon width={20} height={20} fill="#fff" stroke="#fff" />
-              </View>
-
-              <View style={styles.rowBody}>
-                <View style={styles.rowHeader}>
-                  <Text style={styles.sectionName}>{SECTION_LABELS[section]}</Text>
-                  <TouchableOpacity
-                    onPress={() => { setEditSection(section); setShowEditModal(true); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.editText}>✎ Edit</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.subtitle}>{parts.join('  ·  ')}</Text>
-
-                {!!log.description && (
-                  <Text style={styles.note}>{log.description}</Text>
-                )}
-                {!log.didUserDo && !!log.reasonIfNo && (
-                  <Text style={styles.note}>"{log.reasonIfNo}"</Text>
-                )}
-              </View>
-            </View>
-          );
-        })}
+        {renderSectionFields()}
       </ScrollView>
 
       <DailyLogModal
         visible={showEditModal}
-        onClose={() => { setShowEditModal(false); setEditSection(undefined); }}
-        onComplete={() => { setShowEditModal(false); setEditSection(undefined); navigation.goBack(); }}
+        onClose={() => setShowEditModal(false)}
+        onComplete={() => { setShowEditModal(false); navigation.goBack(); }}
         initialDate={new Date(date + 'T00:00:00')}
-        initialSection={editSection}
+        initialSection={section}
       />
     </SafeAreaView>
   );
@@ -151,21 +173,27 @@ const styles = StyleSheet.create({
   backBtn: { width: 36 },
   headerDate: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 16 },
 
-  row: {
+  editBtn: { width: 36, alignItems: 'flex-end' },
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  sectionIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 18, flex: 1 },
+  noRecordBadge: { color: '#555', fontSize: 12, fontWeight: '600' },
+  fieldRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  iconCol: {
-    width: 24, marginTop: 2,
-    alignItems: 'center',
-  },
-  rowBody: { flex: 1, gap: 4 },
-  rowHeader: { flexDirection: 'row', alignItems: 'center' },
-  sectionName: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 15, flex: 1 },
-  editText: { color: colors.textMuted, fontSize: 14 },
-  subtitle: { ...typography.bodySmall, color: colors.textMuted, lineHeight: 18 },
-  note: { ...typography.bodySmall, color: colors.textMuted, marginTop: 2, lineHeight: 20, fontStyle: 'italic' },
+  fieldIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
+  fieldBody: { flex: 1, gap: 3 },
+  fieldLabel: { ...typography.bodySmall, color: colors.textMuted, fontSize: 12 },
+  fieldValue: { ...typography.body, color: colors.text, fontSize: 14 },
+  imagesSection: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  imagesLabel: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.sm },
+  thumbnail: { width: 80, height: 80, borderRadius: 8, marginRight: spacing.sm },
 });
 
 export default RecordDetailScreen;

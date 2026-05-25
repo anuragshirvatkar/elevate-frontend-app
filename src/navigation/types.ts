@@ -32,15 +32,16 @@ export type MainTabParamList = {
 
 export type DrawerParamList = {
   Tabs: undefined;
-  Stats: undefined;
-  Books: undefined;
-  Activities: undefined;
-  CompanionMessages: undefined;
+  Analytics: undefined;
+  Pillars: undefined;
   Achievements: undefined;
   Support: undefined;
-  Settings: undefined;
+  PointRules: undefined;
+  About: undefined;
+  CompanionMessages: undefined;
   JournalDetail: { entry?: JournalEntry };
-  RecordDetail: { date: string; logs: ActivityLogEntry[] };
+  RecordDetail: { date: string; logs: ActivityLogEntry[]; section?: string };
+  EditProfile: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;

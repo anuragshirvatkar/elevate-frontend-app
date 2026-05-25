@@ -1,25 +1,25 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainTabParamList, DrawerParamList } from './types';
-import { colors, spacing } from '../theme';
+import { colors } from '../theme';
 
 import HomeScreen from '../screens/main/HomeScreen';
 import LeaderboardScreen from '../screens/main/LeaderboardScreen';
 import JournalScreen from '../screens/main/JournalScreen';
 import JournalDetailScreen from '../screens/main/JournalDetailScreen';
 import RecordDetailScreen from '../screens/main/RecordDetailScreen';
+import EditProfileScreen from '../screens/main/EditProfileScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
-import StatsScreen from '../screens/drawer/StatsScreen';
-import BooksScreen from '../screens/drawer/BooksScreen';
-import ActivitiesScreen from '../screens/drawer/ActivitiesScreen';
-import CompanionMessagesScreen from '../screens/drawer/CompanionMessagesScreen';
+import AnalyticsScreen from '../screens/drawer/AnalyticsScreen';
+import PillarsScreen from '../screens/drawer/PillarsScreen';
 import AchievementsScreen from '../screens/drawer/AchievementsScreen';
+import CompanionMessagesScreen from '../screens/drawer/CompanionMessagesScreen';
 import SupportScreen from '../screens/drawer/SupportScreen';
-import SettingsScreen from '../screens/drawer/SettingsScreen';
+import PointRulesScreen from '../screens/drawer/PointRulesScreen';
+import AboutScreen from '../screens/drawer/AboutScreen';
 import CustomDrawerContent from '../components/navigation/CustomDrawerContent';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -42,7 +42,7 @@ const TabNavigator = () => {
         tabBarInactiveTintColor: colors.textMuted,
         tabBarShowLabel: true,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
-        tabBarIcon: ({ color, size, focused }) => {
+        tabBarIcon: ({ color, focused }) => {
           const icons: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
             HomeTab: { active: 'home', inactive: 'home-outline' },
             Leaderboard: { active: 'trophy', inactive: 'trophy-outline' },
@@ -69,19 +69,20 @@ const MainNavigator = () => (
       headerShown: false,
       drawerStyle: { backgroundColor: colors.surface, width: 280 },
       drawerPosition: 'right',
-      swipeEnabled: false,
+      swipeEnabled: true,
     }}
   >
     <Drawer.Screen name="Tabs" component={TabNavigator} />
-    <Drawer.Screen name="Stats" component={StatsScreen} />
-    <Drawer.Screen name="Books" component={BooksScreen} />
-    <Drawer.Screen name="Activities" component={ActivitiesScreen} />
-    <Drawer.Screen name="CompanionMessages" component={CompanionMessagesScreen} />
+    <Drawer.Screen name="Analytics" component={AnalyticsScreen} />
+    <Drawer.Screen name="Pillars" component={PillarsScreen} />
     <Drawer.Screen name="Achievements" component={AchievementsScreen} />
+    <Drawer.Screen name="CompanionMessages" component={CompanionMessagesScreen} />
     <Drawer.Screen name="Support" component={SupportScreen} />
-    <Drawer.Screen name="Settings" component={SettingsScreen} />
+    <Drawer.Screen name="PointRules" component={PointRulesScreen} />
+    <Drawer.Screen name="About" component={AboutScreen} />
     <Drawer.Screen name="JournalDetail" component={JournalDetailScreen} />
     <Drawer.Screen name="RecordDetail" component={RecordDetailScreen} />
+    <Drawer.Screen name="EditProfile" component={EditProfileScreen} />
   </Drawer.Navigator>
 );
 

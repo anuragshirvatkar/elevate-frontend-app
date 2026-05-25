@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Image, Animated, Modal
+  RefreshControl, ActivityIndicator, Image, Animated, Modal, Dimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { useNavigation, DrawerActions, useFocusEffect } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
-import { colors, spacing } from '../../theme';
+import { colors, spacing, typography } from '../../theme';
 import DailyLogModal from '../../components/modals/DailyLogModal';
 import BicepIcon from '../../../assets/bicep.svg';
 import BrainIcon from '../../../assets/brain.svg';
@@ -18,7 +19,10 @@ import PurityIcon from '../../../assets/purity.svg';
 import GrowIcon from '../../../assets/grow.svg';
 import { activityLogsApi } from '../../api/activityLogs';
 import { activitiesApi } from '../../api/activities';
-import type { ActivityLogEntry } from '../../types';
+import { companionApi } from '../../api';
+import type { ActivityLogEntry, CompanionMessage } from '../../types';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const SECTION_COLORS: Record<string, string> = {
   power: colors.power,
@@ -32,6 +36,10 @@ const SECTION_ICONS = {
   mind: BrainIcon,
   craft: CraftIcon,
   purity: PurityIcon,
+};
+
+const SECTION_LABELS: Record<string, string> = {
+  power: 'Power', craft: 'Craft', mind: 'Mind', purity: 'Purity',
 };
 
 const getCompanionColor = (name: string): string => {
@@ -84,6 +92,10 @@ const HomeScreen = () => {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
   const isFilterActive = activeFilter.days !== 7 || activeFilter.sections.length < 4 || !!(activeFilter.fromDate && activeFilter.toDate);
+
+  // Companion notification
+  const [notifMessage, setNotifMessage] = useState<CompanionMessage | null>(null);
+  const notifSlide = useRef(new Animated.Value(SCREEN_WIDTH)).current;
 
   const loadRecords = useCallback(async (days: number = 7, sections: string[] = ['power', 'craft', 'purity', 'mind'], fromDate?: Date | null, toDate?: Date | null) => {
     setIsLoadingRecords(true);
@@ -157,6 +169,38 @@ const HomeScreen = () => {
     }).start();
   }, [isStreakCollapsed]);
 
+  useFocusEffect(useCallback(() => {
+    companionApi.getUnreadMessages().then(({ data }) => {
+      if (data.length > 0 && !notifMessage) {
+        setNotifMessage(data[0]);
+        notifSlide.setValue(-SCREEN_WIDTH);
+        Animated.spring(notifSlide, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 60,
+          friction: 10,
+        }).start();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    }).catch(() => {});
+  }, []));
+
+  const dismissNotif = () => {
+    Animated.timing(notifSlide, {
+      toValue: -SCREEN_WIDTH,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setNotifMessage(null));
+  };
+
+  const handleMarkRead = async () => {
+    if (!notifMessage) return;
+    try {
+      await companionApi.markRead(notifMessage.id);
+    } catch {}
+    dismissNotif();
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchProfile(), loadData(), loadRecords(activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate)]);
@@ -215,14 +259,7 @@ const HomeScreen = () => {
       >
         {/* Top Row */}
         <View style={styles.topBar}>
-          <TouchableOpacity
-            onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-            style={styles.iconBtn}
-          >
-            <Ionicons name="menu" size={24} color={colors.text} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.companionBtn}>
+          <TouchableOpacity style={styles.companionBtn} onPress={() => (navigation as any).navigate('CompanionMessages')}>
             {profile?.companions?.[0]?.imageUrl ? (
               <View style={[
                 styles.companionAvatarWrapper,
@@ -236,6 +273,29 @@ const HomeScreen = () => {
             ) : (
               <Ionicons name="person-circle" size={42} color={colors.text} />
             )}
+          </TouchableOpacity>
+
+          {/* Speech bubble inline */}
+          {notifMessage ? (
+            <Animated.View style={[styles.notifBubble, { transform: [{ translateX: notifSlide }] }]}>
+              <View style={styles.notifTail} />
+              <View style={styles.notifContent}>
+                <Text style={styles.notifTitle} numberOfLines={1}>{notifMessage.title}</Text>
+                <Text style={styles.notifMsg} numberOfLines={1}>{notifMessage.message}</Text>
+              </View>
+              <TouchableOpacity onPress={dismissNotif} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={13} color="#555" />
+              </TouchableOpacity>
+            </Animated.View>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+
+          <TouchableOpacity
+            onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+            style={styles.iconBtn}
+          >
+            <Ionicons name="menu" size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -270,9 +330,9 @@ const HomeScreen = () => {
               <Text style={styles.profileName}>
                 {username}
               </Text>
-              <TouchableOpacity style={styles.editIconWrapper}>
+              <TouchableOpacity style={styles.editIconWrapper} onPress={() => navigation.navigate('Profile' as never)}>
                 <Ionicons
-                  name="create-outline"
+                  name="eye-outline"
                   size={18}
                   color="#888888"
                 />
@@ -408,7 +468,6 @@ const HomeScreen = () => {
             Object.entries(recordsData)
               .sort(([a], [b]) => b.localeCompare(a))
               .map(([date, logs]) => {
-                // One entry per section — prefer didUserDo=true
                 const sectionMap = new Map<string, ActivityLogEntry>();
                 for (const log of logs) {
                   if (!sectionMap.has(log.section) || log.didUserDo) sectionMap.set(log.section, log);
@@ -416,25 +475,36 @@ const HomeScreen = () => {
                 return (
                   <View key={date} style={styles.recordsDateGroup}>
                     <Text style={styles.recordsDateLabel}>{formatRecordDate(date)}</Text>
-                    <View style={styles.recordsCards}>
+                    <View style={styles.recordsList}>
                       {(['power', 'craft', 'mind', 'purity'] as const)
                         .filter(sec => sectionMap.has(sec))
                         .map(sec => {
                           const log = sectionMap.get(sec)!;
                           const Icon = SECTION_ICONS[sec];
                           const completed = sec === 'purity' ? (log.relapseCount ?? 0) === 0 : !!log.didUserDo;
+                          const hoursStr = log.hours && log.hours > 0
+                            ? `${Math.floor(log.hours)}h${Math.round((log.hours % 1) * 60) > 0 ? ` ${Math.round((log.hours % 1) * 60)}m` : ''}`
+                            : null;
+                          const isPurity = sec === 'purity';
+                          const statusText = isPurity
+                            ? ((log.relapseCount ?? 0) === 0 ? 'Clean' : `${log.relapseCount} relapse${(log.relapseCount ?? 0) !== 1 ? 's' : ''}`)
+                            : (completed ? 'Completed' : 'Missed');
                           return (
                             <TouchableOpacity
                               key={sec}
-                              style={[styles.recordCard, completed ? styles.recordCardDone : styles.recordCardMissed]}
-                              onPress={() => (navigation as any).navigate('RecordDetail', { date, logs })}
+                              style={styles.recordRow}
+                              onPress={() => (navigation as any).navigate('RecordDetail', { date, logs, section: sec })}
                               activeOpacity={0.7}
                             >
-                              <Icon width={20} height={20} fill="#fff" stroke="#fff" color="#fff" />
-                              <Text style={styles.recordCardLabel}>{sec}</Text>
-                              <View style={[styles.recordCardBadge, completed ? styles.recordCardBadgeDone : styles.recordCardBadgeMissed]}>
-                                <Ionicons name={completed ? 'checkmark' : 'close'} size={8} color="#fff" />
+                              <View style={styles.recordRowIcon}>
+                                <Icon width={18} height={18} fill="#fff" stroke="#fff" color="#fff" />
                               </View>
+                              <View style={styles.recordRowBody}>
+                                <Text style={styles.recordRowSection}>{SECTION_LABELS[sec]}</Text>
+                                <Text style={styles.recordRowStatus} numberOfLines={1}>{statusText}</Text>
+                              </View>
+                              {hoursStr && <Text style={styles.recordRowHours}>{hoursStr}</Text>}
+                              <Ionicons name="eye-outline" size={16} color="#555" style={{ marginLeft: 8 }} />
                             </TouchableOpacity>
                           );
                         })}
@@ -556,20 +626,34 @@ const HomeScreen = () => {
               )}
             </View>
 
-            <TouchableOpacity
-              style={styles.applyFilterBtn}
-              onPress={() => {
-                const f = pendingFilter.sections.length === 0
-                  ? { ...pendingFilter, sections: ['power', 'craft', 'purity', 'mind'] }
-                  : pendingFilter;
-                setActiveFilter(f);
-                loadRecords(f.days, f.sections, f.fromDate, f.toDate);
-                setShowFilterModal(false);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.applyFilterBtnText}>Apply Filter</Text>
-            </TouchableOpacity>
+            <View style={styles.filterActions}>
+              <TouchableOpacity
+                style={styles.filterClearBtn}
+                onPress={() => {
+                  setPendingFilter({ days: 7, sections: ['power', 'craft', 'purity', 'mind'], fromDate: null, toDate: null });
+                  setActiveFilter({ days: 7, sections: ['power', 'craft', 'purity', 'mind'], fromDate: null, toDate: null });
+                  loadRecords(7, ['power', 'craft', 'purity', 'mind'], null, null);
+                  setShowFilterModal(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.filterClearText}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.filterApplyBtn}
+                onPress={() => {
+                  const f = pendingFilter.sections.length === 0
+                    ? { ...pendingFilter, sections: ['power', 'craft', 'purity', 'mind'] }
+                    : pendingFilter;
+                  setActiveFilter(f);
+                  loadRecords(f.days, f.sections, f.fromDate, f.toDate);
+                  setShowFilterModal(false);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.filterApplyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -604,12 +688,13 @@ const HomeScreen = () => {
         />
       )}
 
+
       {/* Daily Log Modal */}
       <DailyLogModal
         visible={showLogModal}
         onClose={() => setShowLogModal(false)}
         onComplete={() => { setShowLogModal(false); onRefresh(); }}
-        onNavigateToMind={() => navigation.navigate('Books' as never)}
+        onNavigateToMind={() => navigation.navigate('Pillars' as never)}
       />
     </SafeAreaView>
   );
@@ -637,6 +722,7 @@ const styles = StyleSheet.create({
     width:44,
     height:44,
     borderRadius:22,
+    zIndex: 2,
   },
   companionAvatarWrapper:{
     width:44,
@@ -797,60 +883,59 @@ const styles = StyleSheet.create({
   noRecordsText: { color: '#555', fontSize: 14, textAlign: 'center', paddingVertical: 16 },
   recordsDateGroup: { gap: 8 },
   recordsDateLabel: { color: '#888', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  recordsCards: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  recordCard: {
-    width: 72, alignItems: 'center', justifyContent: 'center',
-    gap: 5, paddingVertical: 12, paddingTop: 14,
-    backgroundColor: '#111', borderRadius: 10,
-    borderWidth: 1, borderColor: '#222',
-    position: 'relative',
+  recordsList: { gap: 0 },
+  recordRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
   },
-  recordCardDone: { borderColor: colors.success + '55' },
-  recordCardMissed: { borderColor: '#FF444433' },
-  recordCardLabel: { color: '#888', fontSize: 9, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
-  recordCardBadge: {
-    position: 'absolute', top: 4, right: 4,
-    width: 14, height: 14, borderRadius: 7,
+  recordRowIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#1a1a1a',
     alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
   },
-  recordCardBadgeDone: { backgroundColor: colors.success },
-  recordCardBadgeMissed: { backgroundColor: '#FF4444' },
+  recordRowBody: { flex: 1, gap: 2 },
+  recordRowSection: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  recordRowStatus: { color: '#666', fontSize: 12 },
+  recordRowHours: { color: '#888', fontSize: 12, fontWeight: '600' },
 
   // Filter modal
-  filterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  filterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   filterSheet: {
-    backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: spacing.lg, paddingBottom: 32, gap: 12,
-    borderTopWidth: 1, borderColor: '#222',
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    padding: spacing.lg,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
-  filterSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  filterSheetTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  filterSectionLabel: { color: '#666', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6 },
+  filterSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  filterSheetTitle: { ...typography.h3, color: colors.text },
+  filterSectionLabel: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.sm, marginTop: spacing.md },
   filterChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   filterChip: {
     paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 20, borderWidth: 1, borderColor: '#2a2a2a',
-    backgroundColor: '#1a1a1a',
+    borderRadius: 20, borderWidth: 1, borderColor: '#333',
+    backgroundColor: '#0f0f0f',
   },
-  filterChipActive: { borderColor: colors.success + '88', backgroundColor: colors.success + '18' },
+  filterChipActive: { borderColor: colors.text, backgroundColor: '#1a1a1a' },
   filterChipText: { color: '#666', fontSize: 13, fontWeight: '600', textTransform: 'capitalize' },
-  filterChipTextActive: { color: '#fff' },
-  filterDateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  filterChipTextActive: { color: colors.text },
+  filterDateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   filterDateBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 10, paddingHorizontal: 12,
-    borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a',
-    backgroundColor: '#1a1a1a',
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    gap: 6, padding: spacing.sm,
+    borderRadius: 8, borderWidth: 1, borderColor: '#333',
+    backgroundColor: '#0f0f0f',
   },
-  filterDateBtnActive: { borderColor: colors.success + '88', backgroundColor: colors.success + '18' },
-  filterDateBtnText: { color: '#666', fontSize: 13, fontWeight: '600' },
-  filterDateBtnTextActive: { color: '#fff' },
+  filterDateBtnActive: { borderColor: colors.text, backgroundColor: '#1a1a1a' },
+  filterDateBtnText: { color: '#666', fontSize: 13 },
+  filterDateBtnTextActive: { color: colors.text },
   filterDateClear: { padding: 2 },
-  applyFilterBtn: {
-    marginTop: 4, backgroundColor: colors.text,
-    borderRadius: 12, paddingVertical: 14, alignItems: 'center',
-  },
-  applyFilterBtnText: { color: colors.background, fontSize: 15, fontWeight: '700' },
+  filterActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
+  filterClearBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#333', alignItems: 'center' },
+  filterClearText: { color: '#666', fontSize: 14, fontWeight: '600' },
+  filterApplyBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.text, alignItems: 'center' },
+  filterApplyText: { color: colors.background, fontSize: 14, fontWeight: '700' },
   fabContainer: {
     position: 'absolute',
     bottom: spacing.xl,
@@ -918,6 +1003,30 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
+
+  // Companion notification speech bubble (inline in topBar)
+  notifBubble: {
+    flex: 1,
+    height: 44,
+    marginLeft: -16,  // pull bubble further left under companion icon
+    backgroundColor: '#1a1a1a',
+    borderRadius: 22,
+    borderTopLeftRadius: 4,   // flat on the icon side
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#2e2e2e',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 14,
+    paddingRight: 8,
+    gap: 6,
+    overflow: 'hidden',
+  },
+  notifTail: {},   // no tail needed — bubble is flush with icon
+  notifContent: { flex: 1, gap: 0, overflow: 'hidden' },
+  notifTitle: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  notifMsg: { color: '#666', fontSize: 11, lineHeight: 14 },
+  notifReadBtn: { color: '#fff', fontSize: 11, fontWeight: '600', textDecorationLine: 'underline' },
 });
 
 export default HomeScreen;

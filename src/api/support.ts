@@ -9,6 +9,7 @@ export const supportApi = {
     });
     return apiClient.post<{ success: boolean; urls: string[] }>('/support/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      transformRequest: (data) => data,
     });
   },
 
