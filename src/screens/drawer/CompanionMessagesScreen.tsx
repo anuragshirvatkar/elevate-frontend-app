@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Image,
@@ -7,8 +7,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { companionApi } from '../../api';
+import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
 import type { CompanionMessage } from '../../types';
+
+// Same 3 as AchievementsScreen — real raster images, skip tint
+const IMAGE_ACHIEVEMENTS = ['Opened the Book', 'Thinking Begins', 'Strong Mind'];
+
+// For ACHIEVEMENT / AVATAR_UNLOCKED types the imageUrl in metadata is a small icon
+// rendered inside a circle (same style as AchievementsScreen).
+// For all other types it's a banner image shown full-width.
+const ICON_TYPES = ['ACHIEVEMENT', 'AVATAR_UNLOCKED'];
 
 const formatDate = (dateStr: string) => {
   const d = new Date(dateStr);
@@ -21,9 +30,15 @@ const formatDate = (dateStr: string) => {
 
 const CompanionMessagesScreen = () => {
   const navigation = useNavigation();
+  const { profile } = useUser();
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const markedReadIds = useRef<Set<string>>(new Set());
+
+  const companionImageUrl: string | undefined =
+    (profile?.companions?.[0] as any)?.imageUrl ||
+    (profile?.companions?.[0] as any)?.image;
 
   const load = useCallback(async () => {
     try {
@@ -38,47 +53,85 @@ const CompanionMessagesScreen = () => {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  const handleMarkRead = async (id: string) => {
+  const markRead = useCallback(async (id: string) => {
+    if (markedReadIds.current.has(id)) return;
+    markedReadIds.current.add(id);
     try {
       await companionApi.markRead(id);
       setMessages((prev) => prev.map((m) => m.id === id ? { ...m, isRead: true } : m));
     } catch {}
-  };
+  }, []);
+
+  // Auto mark-as-read when item becomes visible
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    viewableItems.forEach(({ item }: { item: CompanionMessage }) => {
+      if (!item.isRead) markRead(item.id);
+    });
+  }).current;
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+
+  const formatType = (type: string) =>
+    type.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   const renderItem = ({ item }: { item: CompanionMessage }) => {
     const imageUrl = (item.metadata as any)?.imageUrl as string | undefined;
+    const isIconType = ICON_TYPES.includes(item.type);
+
     return (
       <View style={[styles.row, !item.isRead && styles.rowUnread]}>
-        {/* Top: date + unread dot */}
-        <View style={styles.rowTop}>
-          <Text style={styles.rowDate}>{formatDate(item.createdAt)}</Text>
-          <View style={styles.rowTopRight}>
-            {!item.isRead && <View style={styles.unreadDot} />}
+        {/* Twitter layout: companion avatar left, content right */}
+        <View style={styles.tweetRow}>
+          {/* Left: companion avatar */}
+          <View style={styles.avatarCol}>
+            {companionImageUrl ? (
+              <Image source={{ uri: companionImageUrl }} style={styles.companionAvatar} resizeMode="cover" />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={18} color="#444" />
+              </View>
+            )}
           </View>
-        </View>
 
-        {/* Type label */}
-        <Text style={styles.typeLabel}>{item.type.replace(/_/g, ' ')}</Text>
+          {/* Right: content */}
+          <View style={styles.contentCol}>
+            {/* Name + date + unread dot */}
+            <View style={styles.nameRow}>
+              <Text style={styles.companionName}>{item.companionName}</Text>
+              {!item.isRead && <View style={styles.unreadDot} />}
+              <Text style={styles.rowDate}>{formatDate(item.createdAt)}</Text>
+            </View>
 
-        {/* Title */}
-        <Text style={styles.rowTitle}>{item.title}</Text>
+            {/* Type chip */}
+            <Text style={styles.typeLabel}>{formatType(item.type)}</Text>
 
-        {/* Optional image */}
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.msgImage} resizeMode="cover" />
-        ) : null}
+            {/* Large full-width circular image for achievement/avatar types */}
+            {imageUrl && isIconType ? (
+              <View style={styles.iconCircleWrap}>
+                <Image
+                  source={{ uri: imageUrl }}
+                  style={styles.iconCircleImg}
+                  resizeMode="cover"
+                  tintColor={item.type === 'ACHIEVEMENT' && !IMAGE_ACHIEVEMENTS.some(n => n.toLowerCase() === item.title.toLowerCase()) ? '#ffffff' : undefined}
+                />
+              </View>
+            ) : null}
 
-        {/* Message body */}
-        <Text style={styles.rowBody}>{item.message}</Text>
+            {/* Title */}
+            <Text style={styles.rowTitle}>{item.title}</Text>
 
-        {/* Footer: companion name + mark as read */}
-        <View style={styles.rowFooter}>
-          <Text style={styles.companionName}>— {item.companionName}</Text>
-          {!item.isRead && (
-            <TouchableOpacity onPress={() => handleMarkRead(item.id)} activeOpacity={0.7}>
-              <Text style={styles.markReadBtn}>Mark as read</Text>
-            </TouchableOpacity>
-          )}
+            {/* Banner image for non-icon types */}
+            {imageUrl && !isIconType ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={styles.msgImage}
+                resizeMode="cover"
+              />
+            ) : null}
+
+            {/* Message body */}
+            <Text style={styles.rowBody}>{item.message}</Text>
+          </View>
         </View>
       </View>
     );
@@ -113,6 +166,8 @@ const CompanionMessagesScreen = () => {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
           }
           showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
         />
       )}
     </SafeAreaView>
@@ -142,52 +197,69 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    gap: 5,
   },
-  rowUnread: {},
+  rowUnread: {
+    borderLeftWidth: 2,
+    borderLeftColor: colors.text,
+    paddingLeft: spacing.sm,
+  },
 
-  rowTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  // Twitter-like layout
+  tweetRow: { flexDirection: 'row', gap: 12 },
+  avatarCol: { width: 42, alignItems: 'center', paddingTop: 2 },
+  companionAvatar: {
+    width: 42, height: 42, borderRadius: 21,
   },
-  rowDate: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 15 },
-  rowTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avatarPlaceholder: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  contentCol: { flex: 1, gap: 4 },
+
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  companionName: { color: colors.text, fontWeight: '700', fontSize: 14 },
   unreadDot: {
     width: 7, height: 7, borderRadius: 4,
     backgroundColor: colors.text,
   },
+  rowDate: { color: colors.textMuted, fontSize: 12, marginLeft: 'auto' },
 
   typeLabel: {
     fontSize: 10,
     fontWeight: '600',
     color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  rowTitle: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 15 },
+  iconCircleWrap: {
+    width: '80%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#222',
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  iconCircleImg: { width: '100%', height: '100%' },
+  rowTitle: { color: colors.text, fontWeight: '700', fontSize: 14 },
 
   msgImage: {
     width: '100%',
-    height: 140,
-    borderRadius: 8,
-    marginTop: spacing.xs,
+    height: 130,
+    borderRadius: 10,
+    marginTop: 4,
+    backgroundColor: '#111',
   },
 
   rowBody: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
+    color: colors.text,
     lineHeight: 20,
+    fontStyle: 'italic',
   },
-
-  rowFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.xs,
-  },
-  companionName: { ...typography.caption, color: colors.textMuted, fontStyle: 'italic' },
-  markReadBtn: { fontSize: 12, fontWeight: '600', color: colors.text, textDecorationLine: 'underline' },
 });
 
 export default CompanionMessagesScreen;

@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Anurag\\\\OneDrive\\\\Desktop\\\\coding\\\\Nexgen\\\\elevate\\\\elevate-frontend\" -Force)",
+      "Bash(Select-Object Name, FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Anurag\\\\OneDrive\\\\Desktop\\\\coding\\\\Nexgen\\\\elevate\\\\elevate-frontend\\\\src\" -Recurse -Force | Where-Object { $_.PSIsContainer } | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"C:\\\\Users\\\\Anurag\\\\OneDrive\\\\Desktop\\\\coding\\\\Nexgen\\\\elevate\\\\elevate-frontend\\\\\", \"\"\\) })",
+      "Bash(npm install *)",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\(p.dependencies['@react-native-community/netinfo']\\)\")",
+      "Bash(npx expo *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(p.dependencies['expo-auth-session'], p.dependencies['expo-web-browser']\\)\")"
     ]
   }
 }

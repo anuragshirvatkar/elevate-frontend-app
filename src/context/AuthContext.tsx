@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi, appTrackingApi } from '../api';
+import { setAuthExpiredHandler, refreshTokenRequest } from '../api/client';
+import { useAlert } from './AlertContext';
 import type { UserResponse } from '../types';
 
 interface AuthState {
@@ -8,24 +10,45 @@ interface AuthState {
   isAuthenticated: boolean;
   user: UserResponse | null;
   accessToken: string | null;
+  isNewUser: boolean;
+  daysSinceLastLogin: number;
 }
 
 interface AuthContextValue extends AuthState {
-  login: (accessToken: string, refreshToken: string, user: UserResponse) => Promise<void>;
+  login: (accessToken: string, refreshToken: string, user: UserResponse, isNewUser?: boolean, daysSinceLastLogin?: number) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: Partial<UserResponse>) => void;
   checkAuth: () => Promise<void>;
+  clearWelcomeBack: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { showAlert } = useAlert();
   const [state, setState] = useState<AuthState>({
     isLoading: true,
     isAuthenticated: false,
     user: null,
     accessToken: null,
+    isNewUser: false,
+    daysSinceLastLogin: 0,
   });
+
+  // When the axios interceptor exhausts all token refresh attempts, reset auth state
+  // and surface a friendly message so the user knows why they landed on Login.
+  const handleAuthExpired = useCallback(() => {
+    setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null, isNewUser: false, daysSinceLastLogin: 0 });
+    showAlert(
+      'Session Expired',
+      'Your session has expired. Please sign in again.',
+    );
+  }, [showAlert]);
+
+  useEffect(() => {
+    setAuthExpiredHandler(handleAuthExpired);
+    return () => setAuthExpiredHandler(() => {});
+  }, [handleAuthExpired]);
 
   const checkAuth = useCallback(async () => {
     try {
@@ -38,20 +61,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedUser = userJson[1] ? JSON.parse(userJson[1]) : null;
 
       if (accessToken && storedUser) {
-        setState({ isLoading: false, isAuthenticated: true, user: storedUser, accessToken });
+        setState({ isLoading: false, isAuthenticated: true, user: storedUser, accessToken, isNewUser: false, daysSinceLastLogin: 0 });
         appTrackingApi.trackOpen().catch(() => {});
       } else if (refreshToken[1]) {
-        // Try to refresh
-        const { data } = await authApi.refresh(refreshToken[1]);
+        // Use raw axios (not apiClient) so an expired refresh token at startup
+        // is caught by the catch below — no interceptor loop, no false "Session
+        // Expired" alert before the user has even opened the app.
+        const { data } = await refreshTokenRequest(refreshToken[1]);
         await AsyncStorage.setItem('accessToken', data.accessToken);
         const { data: me } = await authApi.me();
-        setState({ isLoading: false, isAuthenticated: true, user: storedUser || ({ id: me.userId, email: me.email } as UserResponse), accessToken: data.accessToken });
+        setState({ isLoading: false, isAuthenticated: true, user: storedUser || ({ id: me.userId, email: me.email } as UserResponse), accessToken: data.accessToken, isNewUser: false, daysSinceLastLogin: 0 });
         appTrackingApi.trackOpen().catch(() => {});
       } else {
-        setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null });
+        setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null, isNewUser: false, daysSinceLastLogin: 0 });
       }
     } catch {
-      setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null });
+      setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null, isNewUser: false, daysSinceLastLogin: 0 });
     }
   }, []);
 
@@ -59,13 +84,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkAuth();
   }, [checkAuth]);
 
-  const login = useCallback(async (accessToken: string, refreshToken: string, user: UserResponse) => {
+  const login = useCallback(async (accessToken: string, refreshToken: string, user: UserResponse, isNewUser = false, daysSinceLastLogin = 0) => {
     await AsyncStorage.multiSet([
       ['accessToken', accessToken],
       ['refreshToken', refreshToken],
       ['user', JSON.stringify(user)],
     ]);
-    setState({ isLoading: false, isAuthenticated: true, user, accessToken });
+    setState({ isLoading: false, isAuthenticated: true, user, accessToken, isNewUser, daysSinceLastLogin });
     appTrackingApi.trackOpen().catch(() => {});
   }, []);
 
@@ -75,7 +100,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (refreshToken) await authApi.logout(refreshToken);
     } catch {}
     await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
-    setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null });
+    setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null, isNewUser: false, daysSinceLastLogin: 0 });
+  }, []);
+
+  const clearWelcomeBack = useCallback(() => {
+    setState((prev) => ({ ...prev, isNewUser: false, daysSinceLastLogin: 0 }));
   }, []);
 
   const updateUser = useCallback((updates: Partial<UserResponse>) => {
@@ -88,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, updateUser, checkAuth }}>
+    <AuthContext.Provider value={{ ...state, login, logout, updateUser, checkAuth, clearWelcomeBack }}>
       {children}
     </AuthContext.Provider>
   );

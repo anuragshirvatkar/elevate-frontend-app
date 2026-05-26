@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, Platform, Modal, TextInput, FlatList,
-  ActivityIndicator, Alert, KeyboardAvoidingView,
+  ActivityIndicator, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing } from '../../theme';
+import { useAlert } from '../../context/AlertContext';
 import { setupApi } from '../../api/setup';
 import { activitiesApi } from '../../api/activities';
 import { booksApi } from '../../api/books';
@@ -77,6 +78,7 @@ interface MindState {
 
 const PillarsScreen = () => {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [activeTab, setActiveTab] = useState<Tab>('Power');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -149,7 +151,7 @@ const PillarsScreen = () => {
         })),
       });
     } catch {
-      Alert.alert('Error', 'Failed to load pillar settings.');
+      showAlert('Error', 'Failed to load pillar settings.');
     } finally {
       setLoading(false);
     }
@@ -220,7 +222,7 @@ const PillarsScreen = () => {
       const currentIds = new Set(current.map((a) => a.activityId));
       setPickerOptions((opts[section] ?? []).filter((a) => !currentIds.has(a.id)));
     } catch {
-      Alert.alert('Error', 'Failed to load activities.');
+      showAlert('Error', 'Failed to load activities.');
       setShowActivityPicker(false);
     } finally {
       setPickerLoading(false);
@@ -257,7 +259,7 @@ const PillarsScreen = () => {
       setShowActivityPicker(false);
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to create activity.';
-      Alert.alert('Error', msg);
+      showAlert('Error', msg);
     } finally {
       setCreatingCustom(false);
     }
@@ -300,7 +302,7 @@ const PillarsScreen = () => {
       const currentIds = new Set(mind.books.map((b) => b.userBookId));
       setBookPickerOptions(systemBooks.filter((b) => !currentIds.has(b.id)));
     } catch {
-      Alert.alert('Error', 'Failed to load books.');
+      showAlert('Error', 'Failed to load books.');
       setShowBookPicker(false);
     } finally {
       setBookPickerLoading(false);
@@ -319,7 +321,7 @@ const PillarsScreen = () => {
 
   const handleAddCustomBook = async () => {
     const title = customBookTitle.trim();
-    if (!title) { Alert.alert('Error', 'Title is required.'); return; }
+    if (!title) { showAlert('Error', 'Title is required.'); return; }
     setAddingCustomBook(true);
     try {
       const { data } = await booksApi.createCustom({
@@ -337,7 +339,7 @@ const PillarsScreen = () => {
       setShowCustomBook(false);
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to add book.';
-      Alert.alert('Error', msg);
+      showAlert('Error', msg);
     } finally {
       setAddingCustomBook(false);
     }
@@ -367,7 +369,7 @@ const PillarsScreen = () => {
       }));
       if (summary) setViewSummaryBook({ title: mind.books.find(b => b.userBookId === userBookId)?.title ?? '', summary });
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Not enough reflections to generate summary.');
+      showAlert('Error', err?.response?.data?.message || 'Not enough reflections to generate summary.');
     } finally {
       setGeneratingSummary(null);
     }
@@ -389,7 +391,7 @@ const PillarsScreen = () => {
       }));
       setEditSummaryBookId(null);
     } catch {
-      Alert.alert('Error', 'Failed to save summary.');
+      showAlert('Error', 'Failed to save summary.');
     } finally {
       setSavingSummary(false);
     }
@@ -447,9 +449,9 @@ const PillarsScreen = () => {
           books: mind.books.map((b) => ({ userBookId: b.userBookId, isCompleted: b.isCompleted })),
         });
       }
-      Alert.alert('Saved', 'Changes saved successfully.');
+      showAlert('Saved', 'Changes saved successfully.');
     } catch {
-      Alert.alert('Error', 'Failed to save changes.');
+      showAlert('Error', 'Failed to save changes.');
     } finally {
       setSaving(false);
     }

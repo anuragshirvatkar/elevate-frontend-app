@@ -1,19 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator
+  TextInput, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { setupApi, booksApi } from '../../api';
 import { colors, spacing, typography, radius } from '../../theme';
+import { useAlert } from '../../context/AlertContext';
 import type { UserBook } from '../../types';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 
 const BooksScreen = () => {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [books, setBooks] = useState<UserBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -34,14 +36,14 @@ const BooksScreen = () => {
   }, []);
 
   const handleAddBook = async () => {
-    if (!title.trim()) { Alert.alert('Error', 'Title is required.'); return; }
+    if (!title.trim()) { showAlert('Error', 'Title is required.'); return; }
     setAdding(true);
     try {
       await booksApi.createCustom({ title: title.trim(), author: author.trim() || undefined });
       await loadBooks();
       setTitle(''); setAuthor(''); setShowAddForm(false);
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to add book.');
+      showAlert('Error', e?.response?.data?.message || 'Failed to add book.');
     } finally {
       setAdding(false);
     }
@@ -52,13 +54,13 @@ const BooksScreen = () => {
     try {
       const { data } = await booksApi.generateSummary(bookId);
       if (data.success) {
-        Alert.alert('Summary Generated', data.summary || 'Summary saved to your book.');
+        showAlert('Summary Generated', data.summary || 'Summary saved to your book.');
         await loadBooks();
       } else {
-        Alert.alert('Info', data.message || 'Could not generate summary yet.');
+        showAlert('Info', data.message || 'Could not generate summary yet.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to generate summary.');
+      showAlert('Error', e?.response?.data?.message || 'Failed to generate summary.');
     } finally {
       setGeneratingSummary(null);
     }

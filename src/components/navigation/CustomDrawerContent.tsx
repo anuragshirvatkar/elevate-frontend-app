@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
+import { useAlert } from '../../context/AlertContext';
 
 interface MenuItem {
   label: string;
@@ -14,7 +15,7 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { label: 'Analytics', icon: 'bar-chart-outline', screen: 'Analytics' },
+  { label: 'Profile', icon: 'person-outline', screen: 'Profile' },
   { label: 'Pillars', icon: 'layers-outline', screen: 'Pillars' },
   { label: 'Achievements', icon: 'medal-outline', screen: 'Achievements' },
   { label: 'Support', icon: 'help-circle-outline', screen: 'Support' },
@@ -25,7 +26,19 @@ const MENU_ITEMS: MenuItem[] = [
 const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
   const { logout, user } = useAuth();
   const { profile } = useUser();
+  const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
+
+  const confirmLogout = () => {
+    showAlert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log Out', style: 'destructive', onPress: logout },
+      ]
+    );
+  };
 
   const navigate = (screen: string) => {
     props.navigation.navigate(screen as never);
@@ -68,7 +81,7 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
       </ScrollView>
 
       {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.logoutBtn} onPress={confirmLogout} activeOpacity={0.7}>
         <Ionicons name="log-out-outline" size={20} color={colors.error} />
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>

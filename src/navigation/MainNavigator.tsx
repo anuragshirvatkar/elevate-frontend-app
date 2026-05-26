@@ -12,6 +12,7 @@ import JournalScreen from '../screens/main/JournalScreen';
 import JournalDetailScreen from '../screens/main/JournalDetailScreen';
 import RecordDetailScreen from '../screens/main/RecordDetailScreen';
 import EditProfileScreen from '../screens/main/EditProfileScreen';
+import PublicProfileScreen from '../screens/main/PublicProfileScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
 import AnalyticsScreen from '../screens/drawer/AnalyticsScreen';
 import PillarsScreen from '../screens/drawer/PillarsScreen';
@@ -35,19 +36,21 @@ const TabNavigator = () => {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          paddingBottom: insets.bottom,
-          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom + 4,
+          height: 64 + insets.bottom,
         },
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarShowLabel: true,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '500', marginTop: -4 },
+        tabBarIconStyle: { marginBottom: -2 },
+        tabBarItemStyle: { paddingTop: 6, paddingBottom: 0 },
         tabBarIcon: ({ color, focused }) => {
           const icons: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
             HomeTab: { active: 'home', inactive: 'home-outline' },
             Leaderboard: { active: 'trophy', inactive: 'trophy-outline' },
             Journal: { active: 'journal', inactive: 'journal-outline' },
-            Profile: { active: 'person', inactive: 'person-outline' },
+            Analytics: { active: 'bar-chart', inactive: 'bar-chart-outline' },
           };
           const iconSet = icons[route.name];
           return <Ionicons name={focused ? iconSet.active : iconSet.inactive} size={22} color={color} />;
@@ -57,7 +60,7 @@ const TabNavigator = () => {
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Tab.Screen name="Journal" component={JournalScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Analytics" component={AnalyticsScreen} />
     </Tab.Navigator>
   );
 };
@@ -73,7 +76,7 @@ const MainNavigator = () => (
     }}
   >
     <Drawer.Screen name="Tabs" component={TabNavigator} />
-    <Drawer.Screen name="Analytics" component={AnalyticsScreen} />
+    <Drawer.Screen name="Profile" component={ProfileScreen} />
     <Drawer.Screen name="Pillars" component={PillarsScreen} />
     <Drawer.Screen name="Achievements" component={AchievementsScreen} />
     <Drawer.Screen name="CompanionMessages" component={CompanionMessagesScreen} />
@@ -83,6 +86,7 @@ const MainNavigator = () => (
     <Drawer.Screen name="JournalDetail" component={JournalDetailScreen} />
     <Drawer.Screen name="RecordDetail" component={RecordDetailScreen} />
     <Drawer.Screen name="EditProfile" component={EditProfileScreen} />
+    <Drawer.Screen name="PublicProfile" component={PublicProfileScreen} />
   </Drawer.Navigator>
 );
 

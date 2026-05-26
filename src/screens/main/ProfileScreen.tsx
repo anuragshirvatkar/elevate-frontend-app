@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Image, Linking, Modal, Alert,
+  RefreshControl, ActivityIndicator, Image, Linking, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
+import { profileApi } from '../../api';
+import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
 
 const SECTION_COLORS: Record<string, string> = {
@@ -33,8 +35,35 @@ const ProfileScreen = () => {
   const navigation = useNavigation<any>();
   const { user, logout } = useAuth();
   const { profile, fetchProfile, isLoadingProfile } = useUser();
+  const { showAlert } = useAlert();
   const [refreshing, setRefreshing] = useState(false);
   const [storyModal, setStoryModal] = useState<{ name: string; story: string; fullBodyImageUrl?: string; profileImageUrl?: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteAccount = () => {
+    showAlert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await profileApi.deleteAccount();
+              logout();
+            } catch {
+              showAlert('Error', 'Failed to delete account. Please try again.');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => { if (!profile) fetchProfile(); }, []);
 
@@ -257,6 +286,21 @@ const ProfileScreen = () => {
           </View>
         )}
 
+        <View style={styles.divider} />
+
+        {/* ── Danger Zone ── */}
+        <View style={styles.dangerSection}>
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={handleDeleteAccount}
+            activeOpacity={0.7}
+            disabled={deleting}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.error} />
+            <Text style={styles.deleteBtnText}>{deleting ? 'Deleting...' : 'Delete Account'}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -427,6 +471,30 @@ const styles = StyleSheet.create({
   achievementMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   achievementMetaText: { color: '#555', fontSize: 10 },
   achievementMetaDot: { color: '#444', fontSize: 10 },
+
+  // Danger zone
+  dangerSection: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    gap: spacing.xs,
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  deleteBtnText: {
+    ...typography.body,
+    color: colors.error,
+    fontSize: 15,
+  },
+  deleteHint: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
+    fontSize: 12,
+  },
 
   // Story modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'flex-end' },

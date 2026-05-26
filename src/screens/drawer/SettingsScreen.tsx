@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { setupApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography, radius } from '../../theme';
 import Card from '../../components/common/Card';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
   const { logout } = useAuth();
+  const { showAlert } = useAlert();
   const [mindActive, setMindActive] = useState(true);
   const [togglingMind, setTogglingMind] = useState(false);
 
@@ -22,14 +24,14 @@ const SettingsScreen = () => {
       await setupApi.putMind({ isActive: value });
       setMindActive(value);
     } catch {
-      Alert.alert('Error', 'Failed to update mind section.');
+      showAlert('Error', 'Failed to update mind section.');
     } finally {
       setTogglingMind(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert(
+    showAlert(
       'Log Out',
       'Are you sure you want to log out?',
       [

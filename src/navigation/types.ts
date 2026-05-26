@@ -7,6 +7,7 @@ export type RootStackParamList = {
   Splash: undefined;
   Auth: undefined;
   Onboarding: undefined;
+  WelcomeBack: undefined;
   Main: undefined;
 };
 
@@ -16,6 +17,7 @@ export type AuthStackParamList = {
 };
 
 export type OnboardingStackParamList = {
+  IntroWelcome: undefined;
   CompanionSelect: { skipRouting?: boolean } | undefined;
   DOBSelect: undefined;
   SetupPower: undefined;

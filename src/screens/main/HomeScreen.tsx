@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, DrawerActions, useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
@@ -96,6 +97,8 @@ const HomeScreen = () => {
   // Companion notification
   const [notifMessage, setNotifMessage] = useState<CompanionMessage | null>(null);
   const notifSlide = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+  const dismissedIds = useRef<Set<string>>(new Set());
+  const pendingNotif = useRef<CompanionMessage | null>(null);
 
   const loadRecords = useCallback(async (days: number = 7, sections: string[] = ['power', 'craft', 'purity', 'mind'], fromDate?: Date | null, toDate?: Date | null) => {
     setIsLoadingRecords(true);
@@ -169,25 +172,46 @@ const HomeScreen = () => {
     }).start();
   }, [isStreakCollapsed]);
 
+  const showNotif = useCallback((next: CompanionMessage) => {
+    setNotifMessage(next);
+    Audio.Sound.createAsync(require('../../../assets/notification-bell.wav'))
+      .then(({ sound }) => { sound.playAsync(); sound.setOnPlaybackStatusUpdate((s) => { if (s.isLoaded && s.didJustFinish) sound.unloadAsync(); }); })
+      .catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    notifSlide.setValue(500);
+    Animated.spring(notifSlide, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 60,
+      friction: 10,
+    }).start();
+  }, []);
+
+  // When loading finishes, show any pending notification
+  useEffect(() => {
+    if (!loading && pendingNotif.current) {
+      showNotif(pendingNotif.current);
+      pendingNotif.current = null;
+    }
+  }, [loading]);
+
   useFocusEffect(useCallback(() => {
+    fetchProfile().catch(() => {});
     companionApi.getUnreadMessages().then(({ data }) => {
-      if (data.length > 0 && !notifMessage) {
-        setNotifMessage(data[0]);
-        notifSlide.setValue(-SCREEN_WIDTH);
-        Animated.spring(notifSlide, {
-          toValue: 0,
-          useNativeDriver: true,
-          tension: 60,
-          friction: 10,
-        }).start();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const next = data.find((m: CompanionMessage) => !dismissedIds.current.has(m.id));
+      if (next && (!notifMessage || notifMessage.id !== next.id)) {
+        if (loading) {
+          pendingNotif.current = next;
+        } else {
+          showNotif(next);
+        }
       }
     }).catch(() => {});
-  }, []));
+  }, [loading, notifMessage, showNotif]));
 
   const dismissNotif = () => {
     Animated.timing(notifSlide, {
-      toValue: -SCREEN_WIDTH,
+      toValue: 500,
       duration: 220,
       useNativeDriver: true,
     }).start(() => setNotifMessage(null));
@@ -195,10 +219,25 @@ const HomeScreen = () => {
 
   const handleMarkRead = async () => {
     if (!notifMessage) return;
-    try {
-      await companionApi.markRead(notifMessage.id);
-    } catch {}
+    dismissedIds.current.add(notifMessage.id);
+    try { await companionApi.markRead(notifMessage.id); } catch {}
     dismissNotif();
+  };
+
+  const openCompanionMessages = () => {
+    if (notifMessage) {
+      dismissedIds.current.add(notifMessage.id);
+      companionApi.markRead(notifMessage.id).catch(() => {});
+      dismissNotif();
+    }
+    (navigation as any).navigate('CompanionMessages');
+  };
+
+  const formatMessageType = (type: string): string => {
+    return type
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
   const onRefresh = async () => {
@@ -259,43 +298,58 @@ const HomeScreen = () => {
       >
         {/* Top Row */}
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.companionBtn} onPress={() => (navigation as any).navigate('CompanionMessages')}>
-            {profile?.companions?.[0]?.imageUrl ? (
-              <View style={[
-                styles.companionAvatarWrapper,
-                {
-                  shadowColor: getCompanionColor(profile.companions[0].name),
-                  borderColor: getCompanionColor(profile.companions[0].name),
-                },
-              ]}>
-                <Image source={{ uri: profile.companions[0].imageUrl }} style={styles.companionAvatar} resizeMode="cover" />
-              </View>
-            ) : (
-              <Ionicons name="person-circle" size={42} color={colors.text} />
-            )}
-          </TouchableOpacity>
-
-          {/* Speech bubble inline */}
-          {notifMessage ? (
-            <Animated.View style={[styles.notifBubble, { transform: [{ translateX: notifSlide }] }]}>
-              <View style={styles.notifTail} />
-              <View style={styles.notifContent}>
-                <Text style={styles.notifTitle} numberOfLines={1}>{notifMessage.title}</Text>
-                <Text style={styles.notifMsg} numberOfLines={1}>{notifMessage.message}</Text>
-              </View>
-              <TouchableOpacity onPress={dismissNotif} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close" size={13} color="#555" />
-              </TouchableOpacity>
-            </Animated.View>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
-
           <TouchableOpacity
             onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
             style={styles.iconBtn}
           >
             <Ionicons name="menu" size={24} color={colors.text} />
+          </TouchableOpacity>
+
+          {/* Speech bubble inline — clipped so it slides in/out of companion icon */}
+          <View style={styles.notifClipContainer}>
+            {notifMessage ? (
+              <Animated.View style={[styles.notifBubble, { transform: [{ translateX: notifSlide }] }]}>
+                <View style={styles.notifContent}>
+                  <Text style={styles.notifTitle} numberOfLines={1}>{notifMessage.title}</Text>
+                  <View style={styles.notifMsgRow}>
+                    <Text style={styles.notifMsg} numberOfLines={1}>{notifMessage.message.split(' ').slice(0, 5).join(' ')}...</Text>
+                    <TouchableOpacity onPress={openCompanionMessages} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                      <Text style={styles.notifViewBtn}>View</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={handleMarkRead}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.notifCloseBtn}
+                >
+                  <Ionicons name="close" size={14} color="#888" />
+                </TouchableOpacity>
+                {/* Concave corner cutouts */}
+                <View style={styles.concaveTop} />
+                <View style={styles.concaveBottom} />
+              </Animated.View>
+            ) : null}
+          </View>
+
+          <TouchableOpacity style={styles.companionBtn} onPress={openCompanionMessages}>
+            {(() => {
+              const activeCompanion = profile?.companions?.find((c: any) => c.isActive) ?? profile?.companions?.[0];
+              const imgUrl = (activeCompanion as any)?.imageUrl || (activeCompanion as any)?.image;
+              return imgUrl ? (
+                <View style={[
+                  styles.companionAvatarWrapper,
+                  {
+                    shadowColor: getCompanionColor(activeCompanion?.name ?? ''),
+                    borderColor: getCompanionColor(activeCompanion?.name ?? ''),
+                  },
+                ]}>
+                  <Image source={{ uri: imgUrl }} style={styles.companionAvatar} resizeMode="cover" />
+                </View>
+              ) : (
+                <Ionicons name="person-circle" size={42} color={colors.text} />
+              );
+            })()}
           </TouchableOpacity>
         </View>
 
@@ -705,10 +759,11 @@ const styles = StyleSheet.create({
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   topBar:{
     flexDirection:'row',
-    justifyContent:'space-between',
     alignItems:'center',
+    minHeight: 44,
     marginTop:-16,
     marginBottom:8,
+    gap: 0,
   },
   iconBtn:{
     width:44,
@@ -722,7 +777,7 @@ const styles = StyleSheet.create({
     width:44,
     height:44,
     borderRadius:22,
-    zIndex: 2,
+    zIndex: 10,
   },
   companionAvatarWrapper:{
     width:44,
@@ -1006,27 +1061,55 @@ const styles = StyleSheet.create({
 
   // Companion notification speech bubble (inline in topBar)
   notifBubble: {
-    flex: 1,
+    width: SCREEN_WIDTH - 140,
     height: 44,
-    marginLeft: -16,  // pull bubble further left under companion icon
     backgroundColor: '#1a1a1a',
     borderRadius: 22,
-    borderTopLeftRadius: 4,   // flat on the icon side
-    borderBottomLeftRadius: 4,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
     borderWidth: 1,
     borderColor: '#2e2e2e',
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 14,
-    paddingRight: 8,
+    paddingRight: 10,
     gap: 6,
-    overflow: 'hidden',
   },
-  notifTail: {},   // no tail needed — bubble is flush with icon
-  notifContent: { flex: 1, gap: 0, overflow: 'hidden' },
-  notifTitle: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  notifMsg: { color: '#666', fontSize: 11, lineHeight: 14 },
+  concaveTop: {
+    position: 'absolute',
+    top: -16,
+    right: -8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+  },
+  concaveBottom: {
+    position: 'absolute',
+    bottom: -16,
+    right: -8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+  },
+  notifTail: {},
+  notifClipContainer: { flex: 1, overflow: 'hidden', marginLeft: 20, marginRight: 0 },
+  notifContent: { flex: 1, justifyContent: 'center', gap: 1 },
+  notifTitle: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  notifMsgRow: { flexDirection: 'row', alignItems: 'center', gap: 4, overflow: 'hidden' },
+  notifMsg: { flexShrink: 1, color: '#888', fontSize: 10, lineHeight: 13 },
+  notifViewBtn: { color: '#ffffff', fontSize: 10, fontWeight: '700', flexShrink: 0, marginLeft: 4 },
   notifReadBtn: { color: '#fff', fontSize: 11, fontWeight: '600', textDecorationLine: 'underline' },
+  notifTypeLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  notifCloseBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 0,
+    marginRight: 12,
+  },
 });
 
 export default HomeScreen;

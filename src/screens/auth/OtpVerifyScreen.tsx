@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  Alert, KeyboardAvoidingView, Platform, ScrollView, Animated
+  KeyboardAvoidingView, Platform, ScrollView, Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { AuthStackScreenProps } from '../../navigation/types';
 import { authApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
 
@@ -16,6 +17,7 @@ const OTP_LENGTH = 6;
 const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, navigation }) => {
   const { email } = route.params;
   const { login } = useAuth();
+  const { showAlert } = useAlert();
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -49,16 +51,16 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
 
   const handleVerify = async () => {
     if (otp.length < OTP_LENGTH) {
-      Alert.alert('Invalid OTP', 'Please enter the 6-digit code.');
+      showAlert('Invalid OTP', 'Please enter the 6-digit code.');
       return;
     }
     setLoading(true);
     try {
       const { data } = await authApi.verifyOtp(email, otp);
-      await login(data.accessToken, data.refreshToken, data.user);
+      await login(data.accessToken, data.refreshToken, data.user, data.isNewUser, data.daysSinceLastLogin);
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Invalid or expired OTP.';
-      Alert.alert('Error', Array.isArray(msg) ? msg.join('\n') : msg);
+      showAlert('Error', Array.isArray(msg) ? msg.join('\n') : msg);
     } finally {
       setLoading(false);
     }
@@ -70,9 +72,9 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
       await authApi.requestOtp(email);
       setCountdown(60);
       setOtp('');
-      Alert.alert('Sent', 'A new OTP has been sent to your email.');
+      showAlert('Sent', 'A new OTP has been sent to your email.');
     } catch (err: any) {
-      Alert.alert('Error', 'Could not resend OTP. Please try again.');
+      showAlert('Error', 'Could not resend OTP. Please try again.');
     } finally {
       setResending(false);
     }

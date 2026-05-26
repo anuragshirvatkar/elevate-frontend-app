@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Image, Alert, FlatList,
+  TextInput, ActivityIndicator, Image, FlatList,
   KeyboardAvoidingView, Platform, Modal, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { profileApi, setupApi } from '../../api';
 import { useUser } from '../../context/UserContext';
+import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
 import type { Avatar, SocialLink, CompanionDto } from '../../types';
 
@@ -49,6 +50,7 @@ const fmtDateDisplay = (iso?: string) => {
 const EditProfileScreen = () => {
   const navigation = useNavigation<any>();
   const { profile, fetchProfile } = useUser();
+  const { showAlert } = useAlert();
 
   // ── Form state ──
   const [username, setUsername] = useState(profile?.username || '');
@@ -113,7 +115,7 @@ const EditProfileScreen = () => {
     const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
       if (!hasChanges || saving) return;
       e.preventDefault();
-      Alert.alert(
+      showAlert(
         'Unsaved Changes',
         'You have unsaved changes. What would you like to do?',
         [
@@ -165,7 +167,7 @@ const EditProfileScreen = () => {
   // ── Save ──
   const onSave = async () => {
     if (usernameStatus === 'invalid') {
-      Alert.alert('Invalid Username', usernameReason || 'Username is not available.');
+      showAlert('Invalid Username', usernameReason || 'Username is not available.');
       return;
     }
     setSaving(true);
@@ -187,7 +189,7 @@ const EditProfileScreen = () => {
       await fetchProfile();
       navigation.goBack();
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes.');
+      showAlert('Error', e?.response?.data?.message || 'Failed to save changes.');
     } finally {
       setSaving(false);
     }

@@ -1,21 +1,40 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, KeyboardAvoidingView,
-  Platform, TouchableOpacity, Alert, ScrollView
+  Platform, TouchableOpacity, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import type { AuthStackScreenProps } from '../../navigation/types';
 import { authApi } from '../../api';
 import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
+import { useAlert } from '../../context/AlertContext';
+import { useAuth } from '../../context/AuthContext';
+
+// Required so the in-app browser can hand control back to the app after OAuth.
+WebBrowser.maybeCompleteAuthSession();
 
 const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) => {
+  const { showAlert } = useAlert();
+  const { login } = useAuth();
+
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
+
+  // expo-auth-session Google provider. Uses the Web client ID for Expo Go /
+  // web; the native client IDs kick in automatically on standalone builds.
+  const [request, , promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  });
 
   const validate = () => {
     if (!email.trim()) { setEmailError('Email is required'); return false; }
@@ -34,15 +53,46 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
       navigation.navigate('OtpVerify', { email: email.trim().toLowerCase() });
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to send OTP. Please try again.';
-      Alert.alert('Error', Array.isArray(msg) ? msg.join('\n') : msg);
+      showAlert('Error', Array.isArray(msg) ? msg.join('\n') : msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleSignIn = () => {
-    // TODO: Implement Google OAuth
-    Alert.alert('Google Sign In', 'Google OAuth will be implemented soon');
+  const handleGoogleSignIn = async () => {
+    if (!request) {
+      showAlert('Not Ready', 'Google sign-in is still loading. Please try again in a moment.');
+      return;
+    }
+    setGoogleLoading(true);
+    try {
+      const result = await promptAsync();
+
+      if (result.type === 'success') {
+        const idToken = result.params?.id_token;
+        if (!idToken) {
+          showAlert('Error', 'Could not retrieve Google ID token. Please try again.');
+          return;
+        }
+
+        // Exchange the Google ID token with our backend.
+        const { data } = await authApi.googleLogin(idToken);
+
+        // Stores tokens in AsyncStorage and updates auth state.
+        // RootNavigator then routes to Onboarding or Main automatically.
+        await login(data.accessToken, data.refreshToken, data.user);
+
+      } else if (result.type === 'error') {
+        const msg = result.error?.message ?? 'Google sign-in failed. Please try again.';
+        showAlert('Sign In Failed', msg);
+      }
+      // type 'cancel' / 'dismiss' — user closed the browser, do nothing
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Google sign-in failed. Please try again.';
+      showAlert('Error', msg);
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   return (
@@ -94,12 +144,22 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
 
             {/* Google Button */}
             <TouchableOpacity
-              style={styles.googleButton}
+              style={[
+                styles.googleButton,
+                (googleLoading || !request) && styles.googleButtonDisabled,
+              ]}
               onPress={handleGoogleSignIn}
               activeOpacity={0.7}
+              disabled={googleLoading || !request}
             >
-              <Ionicons name="logo-google" size={20} color={colors.text} />
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
+              {googleLoading ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <Ionicons name="logo-google" size={20} color={colors.text} />
+              )}
+              <Text style={styles.googleButtonText}>
+                {googleLoading ? 'Signing in…' : 'Continue with Google'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -156,6 +216,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
     height: 58,
+  },
+  googleButtonDisabled: {
+    opacity: 0.5,
   },
   googleButtonText: {
     fontSize: 16,

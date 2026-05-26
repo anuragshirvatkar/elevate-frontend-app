@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Animated, Alert, Image, Modal, TextInput, Platform
+  Animated, Image, Modal, TextInput, Platform
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Svg, { Circle } from 'react-native-svg';
@@ -13,9 +13,14 @@ import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
 import type { BookDto, CompanionDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import BrainIcon from '../../../assets/brain.svg';
+
+const MIND_INTRO_SEEN_KEY = 'onboarding_mind_intro_seen';
 
 const QUESTIONS = [
-  "What books will shape your mind?",
+  "What are you reading or planning to read?",
   "When should your mind rest?",
   "When do you prefer to read?"
 ];
@@ -62,6 +67,7 @@ const getCompanionColor = (name: string): string => {
 
 const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ navigation }) => {
   const { updateUser } = useAuth();
+  const { showAlert } = useAlert();
   const [books, setBooks] = useState<BookDto[]>([]);
   const [selectedBooks, setSelectedBooks] = useState<string[]>([]);
   const [step, setStep] = useState(0);
@@ -78,6 +84,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
   const [preferredTime, setPreferredTime] = useState<string>('');
   const [timePickerVisible, setTimePickerVisible] = useState(false);
   const [timeDate, setTimeDate] = useState(new Date());
+  const [mindIntroVisible, setMindIntroVisible] = useState(false);
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -122,8 +129,13 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
 
           setTimeDate(d);
         }
-        if ((mind?.books?.length ?? 0) > 0) {
+        const hasSavedBooks = (mind?.books?.length ?? 0) > 0;
+        if (hasSavedBooks) {
           setStep(2);
+          setMindIntroVisible(false);
+        } else {
+          const introSeen = await AsyncStorage.getItem(MIND_INTRO_SEEN_KEY);
+          setMindIntroVisible(introSeen !== 'true');
         }
 
       } catch (err) {
@@ -135,6 +147,12 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
     };
 
     loadData();
+  }, []);
+
+  const dismissMindIntro = useCallback(async () => {
+    await AsyncStorage.setItem(MIND_INTRO_SEEN_KEY, 'true');
+    setMindIntroVisible(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -184,19 +202,18 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
   const hiddenBooks = books.slice(5);
 
   const toggleBook = (id: string) => {
-    setSelectedBooks((prev) => {
-      if (prev.includes(id)) return prev.filter((b) => b !== id);
-      if (prev.length >= 3) {
-        Alert.alert('Max 3 books', 'You can only select up to 3 books.');
-        return prev;
-      }
-      return [...prev, id];
-    });
+    if (selectedBooks.includes(id)) {
+      setSelectedBooks((prev) => prev.filter((b) => b !== id));
+    } else if (selectedBooks.length >= 3) {
+      showAlert('Max 3 books', 'You can only select up to 3 books.');
+    } else {
+      setSelectedBooks((prev) => [...prev, id]);
+    }
   };
 
   const handleAddBook = async () => {
     const title = customTitle.trim();
-    if (!title) { Alert.alert('Error', 'Book title is required.'); return; }
+    if (!title) { showAlert('Error', 'Book title is required.'); return; }
     setAddingBook(true);
     try {
       const { data } = await booksApi.createCustom({ title, author: customAuthor.trim() || undefined });
@@ -209,7 +226,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
       setCustomAuthor('');
       setCustomModalVisible(false);
     } catch {
-      Alert.alert('Error', 'Failed to add book.');
+      showAlert('Error', 'Failed to add book.');
     } finally {
       setAddingBook(false);
     }
@@ -225,17 +242,28 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
   const handleSkipConfirm = async () => {
     setSaving(true);
     try {
-      await setupApi.saveProgress({ sections: { mind: { skipMind: true } } });
-      navigation.navigate('SetupPower');
+      await setupApi.saveProgress({
+        sections: {
+          mind: {
+            skipMind: true,
+            preferredTime: null,
+            restDays: [],
+            bookIds: [],
+          },
+        },
+      });
+      await setupApi.complete();
+      updateUser({ onboarding_completed: true });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert('Error', 'Failed to save. Please try again.');
+      showAlert('Error', 'Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleSkip = () => {
-    Alert.alert(
+    showAlert(
       'Skip Mind Section?',
       'You can always activate reading later from settings.',
       [
@@ -248,7 +276,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
   const handleNext = () => {
     // Books validation
     if (selectedBooks.length === 0) {
-      Alert.alert(
+      showAlert(
         'Select Books',
         'Please select at least one book or skip this section.'
       );
@@ -257,7 +285,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
 
     // Rest day validation
     if (step >= 1 && restDays.length === 0) {
-      Alert.alert(
+      showAlert(
         'Select Rest Day',
         'Please select 1 rest day.'
       );
@@ -266,7 +294,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
 
     // Time validation
     if (step >= 2 && !preferredTime) {
-      Alert.alert(
+      showAlert(
         'Select Time',
         'Please choose a preferred reading time.'
       );
@@ -301,7 +329,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
       updateUser({ onboarding_completed: true });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert('Error', 'Failed to save. Please try again.');
+      showAlert('Error', 'Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -656,6 +684,32 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
           /></View>
       </View>
 
+      {/* Mind pillar intro */}
+      <Modal
+        visible={mindIntroVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={dismissMindIntro}
+      >
+        <View style={styles.introOverlay}>
+          <View style={styles.introCard}>
+            <View style={styles.introIconWrap}>
+              <BrainIcon width={40} height={40} fill={colors.text} stroke={colors.text} color={colors.text} />
+            </View>
+            <Text style={styles.introTitle}>Mind</Text>
+            <Text style={styles.introBody}>
+              This pillar focuses on your mental growth. what you read, learn, and reflect on daily.
+            </Text>
+            <View style={styles.introBullets}>
+              <Text style={styles.introBullet}>• Points as you complete reading sessions</Text>
+              <Text style={styles.introBullet}>• Personalized reminders to keep you reading</Text>
+              <Text style={styles.introBullet}>• Analytics to track your mental growth</Text>
+            </View>
+            <Button title="Choose my books" onPress={dismissMindIntro} fullWidth size="lg" />
+          </View>
+        </View>
+      </Modal>
+
       {/* Custom Book Modal */}
       <Modal animationType="slide" transparent visible={customModalVisible} onRequestClose={() => setCustomModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -731,6 +785,64 @@ const styles = StyleSheet.create({
   },
 
   scroll: { flex: 1, paddingHorizontal: spacing.lg },
+
+  // Mind intro modal
+  introOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  introCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0a0a0a',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    paddingTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  introIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: spacing.xs,
+  },
+  introTitle: {
+    ...typography.h3,
+    color: colors.text,
+    textAlign: 'center',
+    fontSize: 22,
+    marginTop: spacing.xs,
+  },
+  introBody: {
+    ...typography.bodySmall,
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: spacing.xs,
+    fontWeight: '600',
+  },
+  introBullets: {
+    marginVertical: spacing.sm,
+    gap: spacing.xs,
+  },
+  introBullet: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    fontSize: 12,
+    fontWeight: '400',
+  },
 
   // Companion
   companionSection: {

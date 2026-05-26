@@ -1,7 +1,22 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { RefreshResponse } from '../types';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+
+let authExpiredHandler: (() => void) | null = null;
+
+export const setAuthExpiredHandler = (handler: () => void) => {
+  authExpiredHandler = handler;
+};
+
+/**
+ * Calls POST /auth/refresh using raw axios — intentionally bypasses the
+ * apiClient interceptor to prevent infinite retry loops.
+ * Use this wherever you need to refresh tokens (interceptor + startup check).
+ */
+export const refreshTokenRequest = (refreshToken: string) =>
+  axios.post<RefreshResponse>(`${BASE_URL}/auth/refresh`, { refreshToken });
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -71,7 +86,7 @@ apiClient.interceptors.response.use(
         const refreshToken = await AsyncStorage.getItem('refreshToken');
         if (!refreshToken) throw new Error('No refresh token');
 
-        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
+        const { data } = await refreshTokenRequest(refreshToken);
         await AsyncStorage.setItem('accessToken', data.accessToken);
         processQueue(null, data.accessToken);
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
@@ -79,6 +94,7 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+        authExpiredHandler?.();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

@@ -6,6 +6,7 @@ import Animated, {
   SlideOutRight,
   SlideOutLeft,
 } from 'react-native-reanimated';
+import IntroWelcomeScreen from './IntroWelcomeScreen';
 import CompanionSelectScreen from './CompanionSelectScreen';
 import DOBSelectScreen from './DOBSelectScreen';
 import SetupPowerScreen from './SetupPowerScreen';
@@ -14,12 +15,13 @@ import SetupMindScreen from './SetupMindScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type Step = 0 | 1 | 2 | 3 | 4;
+type Step = 0 | 1 | 2 | 3 | 4 | 5;
 type Direction = 'forward' | 'back';
 
-const SCREEN_NAMES = ['CompanionSelect', 'DOBSelect', 'SetupPower', 'SetupCraft', 'SetupMind'] as const;
+const SCREEN_NAMES = ['IntroWelcome', 'CompanionSelect', 'DOBSelect', 'SetupPower', 'SetupCraft', 'SetupMind'] as const;
 
 const screens = [
+  IntroWelcomeScreen,
   CompanionSelectScreen,
   DOBSelectScreen,
   SetupPowerScreen,
@@ -34,7 +36,7 @@ const OnboardingWizard: React.FC = () => {
   const [routeParams, setRouteParams] = useState<any>({});
 
   const next = useCallback(() => {
-    if (isAnimating || currentStep >= 4) return;
+    if (isAnimating || currentStep >= 5) return;
     setIsAnimating(true);
     setDirection('forward');
     setCurrentStep((prev) => (prev + 1) as Step);
@@ -96,7 +98,7 @@ const OnboardingWizard: React.FC = () => {
     addListener: () => () => {}, // No-op
     removeListener: () => {}, // No-op
     isFocused: () => true,
-    canGoBack: () => currentStep > 0,
+    canGoBack: () => currentStep > 1,
     getId: () => `step-${currentStep}`,
     getParent: () => null,
     getState: () => ({

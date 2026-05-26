@@ -13,4 +13,7 @@ export const profileApi = {
 
   getPublic: (userId: string) =>
     apiClient.get(`/users/${userId}/profile`),
+
+  deleteAccount: () =>
+    apiClient.delete<{ success: boolean; message: string }>('/profile'),
 };

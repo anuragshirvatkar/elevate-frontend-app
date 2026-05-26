@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator
+  TextInput, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { setupApi, activitiesApi } from '../../api';
 import { colors, spacing, typography, radius } from '../../theme';
+import { useAlert } from '../../context/AlertContext';
 import type { ActivityDto, SectionSetup } from '../../types';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
@@ -17,6 +18,7 @@ const SECTIONS = ['power', 'craft'] as const;
 
 const ActivitiesScreen = () => {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [powerSetup, setPowerSetup] = useState<any>(null);
   const [craftSetup, setCraftSetup] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -46,7 +48,7 @@ const ActivitiesScreen = () => {
       setNewActivityName('');
       setShowAdd(null);
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to add activity.');
+      showAlert('Error', e?.response?.data?.message || 'Failed to add activity.');
     } finally {
       setAdding(false);
     }

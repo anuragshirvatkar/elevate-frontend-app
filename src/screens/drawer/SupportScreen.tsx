@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator, Image, Modal,
+  TextInput, ActivityIndicator, Image, Modal,
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supportApi, helpApi } from '../../api';
 import { colors, spacing, typography } from '../../theme';
+import { useAlert } from '../../context/AlertContext';
 import type { SupportIssueType, SupportTicket } from '../../types';
 
 const ISSUE_TYPES: { label: string; value: SupportIssueType }[] = [
@@ -44,6 +45,7 @@ const formatDate = (dateStr: string) => {
 
 const SupportScreen = () => {
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,12 +83,12 @@ const SupportScreen = () => {
 
   const handlePickImage = async () => {
     if (images.length >= 5) {
-      Alert.alert('Limit reached', 'You can attach up to 5 images.');
+      showAlert('Limit reached', 'You can attach up to 5 images.');
       return;
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photo library.');
+      showAlert('Permission required', 'Please allow access to your photo library.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -107,7 +109,7 @@ const SupportScreen = () => {
 
   const handleSubmit = async () => {
     if (!description.trim() || description.trim().length < 10) {
-      Alert.alert('Error', 'Description must be at least 10 characters.');
+      showAlert('Error', 'Description must be at least 10 characters.');
       return;
     }
     setSubmitting(true);
@@ -126,7 +128,7 @@ const SupportScreen = () => {
       setShowForm(false);
       await loadTickets();
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to submit ticket.');
+      showAlert('Error', e?.response?.data?.message || 'Failed to submit ticket.');
     } finally {
       setSubmitting(false);
     }

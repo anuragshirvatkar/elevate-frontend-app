@@ -4,7 +4,7 @@ import {
   ActivityIndicator, RefreshControl, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { leaderboardApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -50,7 +50,7 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
     <View
       style={[
         styles.podiumBox,
-        { height, borderColor: color, backgroundColor: color + '10' },
+        { height, borderColor: color, backgroundColor: color + '22' },
         isMe && {
           shadowColor: color,
           shadowOpacity: 0.85,
@@ -61,8 +61,8 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
       ]}
     >
       {/* Rank badge — top-right */}
-      <View style={styles.podiumRankBadge}>
-        <Text style={[styles.podiumRankText, { color }]}>#{rank}</Text>
+      <View style={[styles.podiumRankBadge, { backgroundColor: color }]}>
+        <Text style={[styles.podiumRankText, { color: '#000' }]}>#{rank}</Text>
       </View>
 
       {/* Avatar */}
@@ -97,6 +97,7 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
 };
 
 const LeaderboardScreen = () => {
+  const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [rankings, setRankings] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<{ rank: number; points: number } | null>(null);
@@ -168,9 +169,11 @@ const LeaderboardScreen = () => {
     const isMe = item.userId === myUserId;
     return (
       <View style={[styles.row, isMe && styles.rowMe]}>
-        <Text style={[styles.rowRank, isMe && styles.rowRankMe]}>#{item.rank}</Text>
+        <View style={styles.rankBadge}>
+          <Text style={styles.rankBadgeText}>#{item.rank}</Text>
+        </View>
         <View style={[styles.rowAvatar, isMe && styles.rowAvatarMe]}>
-          <Text style={styles.rowAvatarText}>{item.name[0]?.toUpperCase() || '?'}</Text>
+          <Text style={[styles.rowAvatarText, isMe && { color: '#000' }]}>{item.name[0]?.toUpperCase() || '?'}</Text>
         </View>
         <Text style={[styles.rowName, isMe && styles.rowNameMe]} numberOfLines={1}>
           {item.name}{isMe ? ' (you)' : ''}
@@ -181,6 +184,10 @@ const LeaderboardScreen = () => {
       </View>
     );
   };
+
+  const myEntry = myRank && myRank.rank > 3
+    ? rankings.find(e => e.userId === myUserId) || { userId: myUserId, name: 'You', rank: myRank.rank, points: myRank.points }
+    : null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -218,16 +225,6 @@ const LeaderboardScreen = () => {
                   ))}
                 </View>
 
-                {/* Current user rank banner (only if not in top 3) */}
-                {myRank && myRank.rank > 3 && (
-                  <View style={styles.myRankBanner}>
-                    <Text style={styles.myRankLabel}>Your Rank</Text>
-                    <View style={styles.myRankRight}>
-                      <Text style={styles.myRankNum}>#{myRank.rank}</Text>
-                      <Text style={styles.myRankPts}>{myRank.points.toLocaleString()} pts</Text>
-                    </View>
-                  </View>
-                )}
               </>
             ) : null
           }
@@ -237,6 +234,20 @@ const LeaderboardScreen = () => {
             ) : null
           }
           renderItem={renderRow}
+          ListFooterComponent={
+            myEntry ? (
+              <View style={styles.myEntryRow}>
+                <View style={[styles.rankBadge, { backgroundColor: '#111' }]}>
+                  <Text style={styles.rankBadgeText}>#{myEntry.rank}</Text>
+                </View>
+                <View style={[styles.rowAvatar, { borderColor: '#000', backgroundColor: '#e0e0e0' }]}>
+                  <Text style={[styles.rowAvatarText, { color: '#000' }]}>{myEntry.name[0]?.toUpperCase() || '?'}</Text>
+                </View>
+                <Text style={styles.myEntryName} numberOfLines={1}>{myEntry.name} (you)</Text>
+                <Text style={styles.myEntryPoints}>{myEntry.points.toLocaleString()} pts</Text>
+              </View>
+            ) : null
+          }
         />
       )}
 
@@ -373,80 +384,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // My rank banner
-  myRankBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-  },
-  myRankLabel: { ...typography.bodySmall, color: colors.textSecondary },
-  myRankRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  myRankNum: { ...typography.h4, color: colors.text },
-  myRankPts: { ...typography.bodySmall, color: colors.textMuted },
-
-  // Twitter-style list rows
+  // List rows
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: spacing.md,
   },
   rowMe: {
-    borderWidth: 1.5,
-    borderColor: colors.text,
-    borderRadius: 10,
-    marginHorizontal: spacing.sm,
-    marginVertical: 2,
-    paddingHorizontal: spacing.md,
-    backgroundColor: '#111',
+    backgroundColor: '#fff',
+    borderBottomColor: '#ddd',
   },
-  rowRank: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    width: 30,
-    textAlign: 'center',
+  rankBadge: {
+    minWidth: 34,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#1e1e1e',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  rowRankMe: { color: colors.textSecondary },
+  rankBadgeMe: { backgroundColor: '#222' },
+  rankBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
   rowAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.cardElevated,
+    backgroundColor: '#1e1e1e',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#2a2a2a',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowAvatarMe: {
-    borderColor: colors.text,
-    backgroundColor: colors.card,
+  rowAvatarMe: { borderColor: '#aaa', backgroundColor: '#e8e8e8' },
+  rowAvatarText: { color: colors.text, fontWeight: '700', fontSize: 14 },
+  rowName: { flex: 1, color: '#aaa', fontSize: 14, fontWeight: '500' },
+  rowNameMe: { color: '#000', fontWeight: '700' },
+  rowPoints: { fontSize: 13, color: '#555', fontWeight: '500' },
+  rowPointsMe: { color: '#000', fontWeight: '700' },
+  rowProfileBtn: { padding: 6 },
+
+  // My entry (you) — appended after list
+  myEntryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+    backgroundColor: '#fff',
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
   },
-  rowAvatarText: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  rowName: {
-    flex: 1,
-    ...typography.body,
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
-  rowNameMe: { color: colors.text, fontWeight: '600' },
-  rowPoints: { ...typography.bodySmall, color: colors.textMuted },
-  rowPointsMe: { color: colors.text, fontWeight: '600' },
+  myEntryName: { flex: 1, color: '#000', fontSize: 14, fontWeight: '700' },
+  myEntryPoints: { fontSize: 13, color: '#333', fontWeight: '700' },
 
   // Filter modal (mirrors JournalScreen)
   filterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },

@@ -25,6 +25,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "scheme": "com.nexgen.elevate",
     "plugins": [
       [
         "expo-image-picker",
