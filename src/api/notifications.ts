@@ -1,7 +1,8 @@
 import apiClient from './client';
-import type { RegisterDeviceDto } from '../types';
 
 export const notificationsApi = {
-  registerDevice: (dto: RegisterDeviceDto) =>
-    apiClient.post<{ message: string }>('/notifications/register-device', dto),
+  registerDevice: (token: string) =>
+    apiClient.post<{ message: string }>('/notifications/register-device', { expoPushToken: token }),
+  test: () =>
+    apiClient.post<{ message: string }>('/notifications/test'),
 };

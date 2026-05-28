@@ -103,6 +103,53 @@ const PillarsScreen = () => {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [creatingCustom, setCreatingCustom] = useState(false);
 
+  // ── Unsaved changes guard ─────────────────────────────────────────────────
+
+  const hasUnsavedChanges = useRef(false);
+  const mindEnabledUnsaved = useRef(false);
+
+  const handleTabChange = (tab: Tab) => {
+    if (activeTab === 'Mind' && mindEnabledUnsaved.current && mind.books.length === 0) {
+      setMind((s) => ({ ...s, isActive: false }));
+      mindEnabledUnsaved.current = false;
+    }
+    setActiveTab(tab);
+  };
+
+  useEffect(() => {
+    hasUnsavedChanges.current = true;
+  }, [power, craft, mind]);
+
+  useEffect(() => {
+    const unsubscribe = (navigation as any).addListener('beforeRemove', (e: any) => {
+      if (!hasUnsavedChanges.current) return;
+      e.preventDefault();
+      showAlert(
+        'Unsaved Changes',
+        'You have unsaved changes. Do you want to save before leaving?',
+        [
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              hasUnsavedChanges.current = false;
+              if (mindEnabledUnsaved.current && mind.books.length === 0) {
+                setMind((s) => ({ ...s, isActive: false }));
+                mindEnabledUnsaved.current = false;
+              }
+              (navigation as any).dispatch(e.data.action);
+            },
+          },
+          {
+            text: 'Save',
+            onPress: async () => { await save(); hasUnsavedChanges.current = false; (navigation as any).dispatch(e.data.action); },
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  }, [navigation, power, craft, mind]);
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -150,6 +197,7 @@ const PillarsScreen = () => {
           aiSummary: b.aiSummary ?? null,
         })),
       });
+      hasUnsavedChanges.current = false;
     } catch {
       showAlert('Error', 'Failed to load pillar settings.');
     } finally {
@@ -267,6 +315,75 @@ const PillarsScreen = () => {
 
   // ── Books ─────────────────────────────────────────────────────────────────
 
+  // ── Enable-mind modal ─────────────────────────────────────────────────────
+  const [showEnableMindModal, setShowEnableMindModal] = useState(false);
+  const [enableMindBook, setEnableMindBook] = useState<{ id: string; title: string; author?: string } | null>(null);
+  const [enableMindTime, setEnableMindTime] = useState<string | undefined>(undefined);
+  const [enableMindTimePickerVisible, setEnableMindTimePickerVisible] = useState(false);
+  const [enableMindBookSearch, setEnableMindBookSearch] = useState('');
+  const [enableMindBookOptions, setEnableMindBookOptions] = useState<BookDto[]>([]);
+  const [enableMindBookLoading, setEnableMindBookLoading] = useState(false);
+  const [enableMindSaving, setEnableMindSaving] = useState(false);
+
+  const openEnableMindModal = async () => {
+    setEnableMindBook(null);
+    setEnableMindTime(undefined);
+    setEnableMindBookSearch('');
+    setEnableMindBookLoading(true);
+    setShowEnableMindModal(true);
+    try {
+      let opts = optionsCache.current;
+      if (!opts) {
+        const res = await setupApi.getOptions();
+        opts = (res.data as SetupOptionsResponse).activities;
+        optionsCache.current = opts;
+        (optionsCache as any).books = (res.data as any).books ?? [];
+      }
+      setEnableMindBookOptions((optionsCache as any).books ?? []);
+    } catch {
+      showAlert('Error', 'Failed to load books.');
+      setShowEnableMindModal(false);
+    } finally {
+      setEnableMindBookLoading(false);
+    }
+  };
+
+  const confirmEnableMind = async () => {
+    if (!enableMindBook) {
+      showAlert('Required', 'Please select at least one book to enable the Mind section.');
+      return;
+    }
+    setEnableMindSaving(true);
+    try {
+      await setupApi.saveProgress({
+        sections: {
+          mind: {
+            preferredTime: enableMindTime,
+            restDays: [],
+            bookIds: [enableMindBook.id],
+          },
+        },
+      });
+      setMind((prev) => ({
+        ...prev,
+        isActive: true,
+        preferredTime: enableMindTime,
+        books: prev.books.some((b) => b.userBookId === enableMindBook.id)
+          ? prev.books
+          : [...prev.books, { userBookId: enableMindBook.id, title: enableMindBook.title, author: enableMindBook.author, isCompleted: false }],
+      }));
+      setShowEnableMindModal(false);
+    } catch {
+      showAlert('Error', 'Failed to enable Mind section.');
+    } finally {
+      setEnableMindSaving(false);
+    }
+  };
+
+  const discardEnableMind = () => {
+    setShowEnableMindModal(false);
+  };
+
   // book picker
   const [showBookPicker, setShowBookPicker] = useState(false);
   const [bookPickerSearch, setBookPickerSearch] = useState('');
@@ -309,14 +426,31 @@ const PillarsScreen = () => {
     }
   };
 
-  const addSystemBook = (book: BookDto) => {
-    // system books get added to backend via setupApi.saveProgress bookIds — here we just track locally
-    // using book.id as a placeholder userBookId until saved
-    setMind((s) => ({
-      ...s,
-      books: [...s.books, { userBookId: book.id, title: book.title, author: book.author, isCompleted: false }],
-    }));
+  const addSystemBook = async (book: BookDto) => {
     setShowBookPicker(false);
+    setBookPickerLoading(true);
+    try {
+      await setupApi.saveProgress({
+        sections: { mind: { bookIds: [book.id] } },
+      });
+      const mindRes = await setupApi.getMind();
+      const mn = mindRes.data as MindSetup;
+      setMind((s) => ({
+        ...s,
+        books: (mn.books ?? []).map((b) => ({
+          userBookId: b.userBookId,
+          title: b.title,
+          author: b.author,
+          isCompleted: b.isCompleted,
+          aiSummary: b.aiSummary ?? null,
+        })),
+      }));
+      mindEnabledUnsaved.current = false;
+    } catch {
+      showAlert('Error', 'Failed to add book.');
+    } finally {
+      setBookPickerLoading(false);
+    }
   };
 
   const handleAddCustomBook = async () => {
@@ -362,7 +496,12 @@ const PillarsScreen = () => {
     setGeneratingSummary(userBookId);
     try {
       const { data } = await booksApi.generateSummary(userBookId);
-      const summary = (data as any).summary ?? '';
+      const res = data as any;
+      if (res.success === false) {
+        showAlert('Cannot Generate Summary', res.message || 'Not enough reflections to generate summary.');
+        return;
+      }
+      const summary = res.summary ?? '';
       setMind((s) => ({
         ...s,
         books: s.books.map((b) => b.userBookId === userBookId ? { ...b, aiSummary: summary } : b),
@@ -572,12 +711,33 @@ const PillarsScreen = () => {
       <View style={s.rowGroup}>
         <View style={s.row}>
           <View style={{ flex: 1 }}>
-            <Text style={s.rowLabel}>Enable Reading Tracker</Text>
+            <Text style={s.rowLabel}>Enable Mind Section</Text>
             <Text style={s.rowSub}>Track your daily reading progress</Text>
           </View>
           <Switch
             value={mind.isActive}
-            onValueChange={(v) => setMind((s) => ({ ...s, isActive: v }))}
+            onValueChange={(v) => {
+              if (v) {
+                showAlert(
+                  'Enable Mind Section',
+                  'To enable Mind, please select a book, preferred reading time, and rest days in the Mind tab.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Set Up',
+                      onPress: () => {
+                        setMind((s) => ({ ...s, isActive: true }));
+                        mindEnabledUnsaved.current = true;
+                        setActiveTab('Mind');
+                        openBookPicker();
+                      },
+                    },
+                  ]
+                );
+              } else {
+                setMind((s) => ({ ...s, isActive: false }));
+              }
+            }}
             trackColor={{ false: '#1a1a1a', true: '#fff' }}
             thumbColor={mind.isActive ? '#000' : '#555'}
             ios_backgroundColor="#1a1a1a"
@@ -585,7 +745,16 @@ const PillarsScreen = () => {
         </View>
       </View>
 
+      {!mind.isActive && (
+        <View style={s.mindDisabledBanner}>
+          <Ionicons name="eye-off-outline" size={14} color="#555" />
+          <Text style={s.mindDisabledText}>Mind section is disabled. Enable it to edit settings.</Text>
+        </View>
+      )}
+
       <View style={s.sep} />
+
+      <View style={[!mind.isActive && s.mindDisabledSection]} pointerEvents={mind.isActive ? 'auto' : 'none'}>
 
       {/* Preferred Time */}
       <View style={s.rowGroup}>
@@ -654,7 +823,7 @@ const PillarsScreen = () => {
                   {b.author ? <Text style={s.bookAuthor}>{b.author}</Text> : null}
                 </View>
                 <View style={s.rowRight}>
-                  <Text style={s.rowValueSmall}>Done</Text>
+                  <Text style={s.rowValueSmall}>Mark Complete</Text>
                   <Switch
                     value={b.isCompleted}
                     onValueChange={() => toggleBook(b.userBookId)}
@@ -718,6 +887,8 @@ const PillarsScreen = () => {
           ))
         )}
       </View>
+
+      </View>{/* end mindDisabledSection */}
 
       <View style={{ height: 100 }} />
     </ScrollView>
@@ -842,7 +1013,7 @@ const PillarsScreen = () => {
           <TouchableOpacity
             key={tab}
             style={[s.tabChip, activeTab === tab && s.tabChipActive]}
-            onPress={() => setActiveTab(tab)}
+            onPress={() => handleTabChange(tab)}
             activeOpacity={0.7}
           >
             <Text style={[s.tabChipText, activeTab === tab && s.tabChipTextActive]}>{tab}</Text>
@@ -1035,6 +1206,124 @@ const PillarsScreen = () => {
         </TouchableOpacity>
       </Modal>
 
+      {/* ── Enable Mind Modal ── */}
+      <Modal visible={showEnableMindModal} transparent animationType="slide" onRequestClose={discardEnableMind}>
+        <KeyboardAvoidingView style={s.pickerOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[s.pickerSheet, { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg }]}>
+            <View style={[s.pickerHeader, { paddingHorizontal: 0 }]}>
+              <Text style={s.pickerTitle}>Enable Mind Section</Text>
+              <TouchableOpacity onPress={discardEnableMind}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Book selection */}
+            <Text style={[s.groupLabel, { marginBottom: 8 }]}>Select a Book <Text style={{ color: colors.error }}>*</Text></Text>
+            <View style={s.searchRow}>
+              <Ionicons name="search-outline" size={16} color="#444" />
+              <TextInput
+                style={s.searchInput}
+                placeholder="Search books…"
+                placeholderTextColor="#444"
+                value={enableMindBookSearch}
+                onChangeText={setEnableMindBookSearch}
+                autoCapitalize="words"
+              />
+            </View>
+            {enableMindBook && (
+              <View style={[s.pickerRow, { backgroundColor: '#111', borderRadius: 8, marginBottom: 4 }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.pickerRowText}>{enableMindBook.title}</Text>
+                  {enableMindBook.author ? <Text style={s.bookAuthor}>{enableMindBook.author}</Text> : null}
+                </View>
+                <Ionicons name="checkmark-circle" size={18} color={colors.text} />
+              </View>
+            )}
+            {enableMindBookLoading ? (
+              <View style={{ height: 80, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator color={colors.text} />
+              </View>
+            ) : (
+              <FlatList
+                data={enableMindBookOptions.filter((b) =>
+                  b.title.toLowerCase().includes(enableMindBookSearch.toLowerCase()) ||
+                  (b.author ?? '').toLowerCase().includes(enableMindBookSearch.toLowerCase())
+                )}
+                keyExtractor={(b) => b.id}
+                style={{ maxHeight: 160, marginBottom: 8 }}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[s.pickerRow, enableMindBook?.id === item.id && { backgroundColor: '#111' }]}
+                    onPress={() => setEnableMindBook({ id: item.id, title: item.title, author: item.author })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.pickerRowText}>{item.title}</Text>
+                      {item.author ? <Text style={s.bookAuthor}>{item.author}</Text> : null}
+                    </View>
+                    {enableMindBook?.id === item.id && <Ionicons name="checkmark-circle" size={18} color={colors.text} />}
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={<Text style={s.emptyText}>No matching books.</Text>}
+              />
+            )}
+
+            {/* Preferred time */}
+            <Text style={[s.groupLabel, { marginTop: 8, marginBottom: 8 }]}>Preferred Reading Time</Text>
+            <TouchableOpacity
+              style={s.row}
+              onPress={() => setEnableMindTimePickerVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={s.rowLabel}>Reading time</Text>
+              <View style={s.rowRight}>
+                <Text style={s.rowValue}>{enableMindTime ? formatDisplay(enableMindTime) : 'Not set'}</Text>
+                <Ionicons name="chevron-forward" size={14} color="#444" />
+              </View>
+            </TouchableOpacity>
+            {enableMindTimePickerVisible && Platform.OS === 'ios' && (
+              <DateTimePicker
+                value={enableMindTime ? parseTime(enableMindTime) : new Date()}
+                mode="time"
+                display="spinner"
+                onChange={(_, date) => { if (date) setEnableMindTime(formatTime(date)); }}
+                textColor={colors.text}
+              />
+            )}
+            {enableMindTimePickerVisible && Platform.OS === 'android' && (
+              <DateTimePicker
+                value={enableMindTime ? parseTime(enableMindTime) : new Date()}
+                mode="time"
+                display="default"
+                onChange={(_, date) => { setEnableMindTimePickerVisible(false); if (date) setEnableMindTime(formatTime(date)); }}
+              />
+            )}
+
+            {/* Actions */}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={[s.saveBtn, { flex: 1, backgroundColor: '#1a1a1a' }]}
+                onPress={discardEnableMind}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.saveBtnText, { color: '#aaa' }]}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.saveBtn, { flex: 1 }]}
+                onPress={confirmEnableMind}
+                disabled={enableMindSaving}
+                activeOpacity={0.8}
+              >
+                {enableMindSaving
+                  ? <ActivityIndicator color="#000" />
+                  : <Text style={s.saveBtnText}>Enable Mind</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* ── Edit Summary Modal ── */}
       <Modal visible={!!editSummaryBookId} transparent animationType="slide" onRequestClose={() => setEditSummaryBookId(null)}>
         <KeyboardAvoidingView style={s.pickerOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -1147,6 +1436,18 @@ const s = StyleSheet.create({
   addRowText: { fontSize: 14, color: '#555' },
 
   rowSub: { fontSize: 12, color: '#444', marginTop: 2 },
+
+  mindDisabledSection: { opacity: 0.3 },
+  mindDisabledBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#0d0d0d',
+  },
+  mindDisabledText: { fontSize: 12, color: '#555' },
+  disabledOverlay: { opacity: 0.2 },
   bookInfo: { flex: 1 },
   bookAuthor: { fontSize: 12, color: '#555', marginTop: 2 },
   emptyText: { fontSize: 14, color: '#444', paddingVertical: spacing.md },

@@ -248,17 +248,25 @@ const AnalyticsScreen = () => {
 
           {/* ── Mind + Purity row ─────────────────── */}
           <View style={s.cardRow}>
-            <SectionCard
-              Icon={BrainIcon}
-              title="Mind"
-              rate={mindActive && mindData ? mindData.completionRate : 0}
-              stats={mindActive && mindData ? [
-                { label: 'Active Days', value: `${mindData.completedDays} / ${mindData.totalDays}` },
-                { label: 'Books Done', value: `${mindData.booksCompleted}` },
-              ] : [
-                { label: 'Status', value: 'Not active' },
-              ]}
-            />
+            <View style={[{ flex: 1 }, !mindActive && s.mindInactive]}>
+              <SectionCard
+                Icon={BrainIcon}
+                title="Mind"
+                rate={mindActive && mindData ? mindData.completionRate : 0}
+                stats={mindActive && mindData ? [
+                  { label: 'Active Days', value: `${mindData.completedDays} / ${mindData.totalDays}` },
+                  { label: 'Books Done', value: `${mindData.booksCompleted}` },
+                ] : [
+                  { label: 'Days', value: '—' },
+                  { label: 'Books', value: '—' },
+                ]}
+              />
+              {!mindActive && (
+                <View style={s.mindInactiveBadge}>
+                  <Text style={s.mindInactiveBadgeText}>Disabled</Text>
+                </View>
+              )}
+            </View>
             <View style={[s.card, { flex: 1 }]}>
               <View style={s.cardHeader}>
                 <View style={s.cardLeft}>
@@ -511,6 +519,16 @@ const s = StyleSheet.create({
   moodDots: { flexDirection: 'row', gap: 4 },
   moodDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#1e1e1e' },
   moodDotOn: { backgroundColor: colors.text },
+
+  // Mind inactive
+  mindInactive: { opacity: 0.4 },
+  mindInactiveBadge: {
+    position: 'absolute', top: 8, right: 8,
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 7, paddingVertical: 2,
+    borderRadius: 10,
+  },
+  mindInactiveBadgeText: { fontSize: 10, color: '#555', fontWeight: '600' },
 
   // Insight
   insightCard: {

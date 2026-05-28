@@ -30,8 +30,8 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
 
   // expo-auth-session Google provider. Uses the Web client ID for Expo Go /
   // web; the native client IDs kick in automatically on standalone builds.
-  const [request, , promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   });
@@ -164,7 +164,18 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
           </View>
 
           <Text style={styles.disclaimer}>
-            By continuing, you agree to our Terms & Privacy Policy.
+            By continuing, you agree to our{' '}
+            <Text
+              style={styles.disclaimerLink}
+              onPress={() =>
+                WebBrowser.openBrowserAsync(
+                  'https://elevateyourlife.app/privacy-policy'
+                )
+              }
+            >
+              Terms & Privacy Policy
+            </Text>
+            .
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -227,10 +238,16 @@ const styles = StyleSheet.create({
   },
   disclaimer: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.33)',
+    color: 'rgba(255,255,255,0.33)',
     textAlign: 'center',
     marginTop: 'auto',
     paddingTop: spacing.xl,
+    lineHeight: 18,
+  },
+  disclaimerLink: {
+    fontSize: 11,
+    color: '#ffffff',
+    lineHeight: 18,
   },
   bottomRightGlow: {
     position: 'absolute',

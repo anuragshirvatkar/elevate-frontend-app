@@ -50,7 +50,7 @@ const TabNavigator = () => {
             HomeTab: { active: 'home', inactive: 'home-outline' },
             Leaderboard: { active: 'trophy', inactive: 'trophy-outline' },
             Journal: { active: 'journal', inactive: 'journal-outline' },
-            Analytics: { active: 'bar-chart', inactive: 'bar-chart-outline' },
+            Profile: { active: 'person', inactive: 'person-outline' },
           };
           const iconSet = icons[route.name];
           return <Ionicons name={focused ? iconSet.active : iconSet.inactive} size={22} color={color} />;
@@ -60,7 +60,7 @@ const TabNavigator = () => {
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Tab.Screen name="Journal" component={JournalScreen} />
-      <Tab.Screen name="Analytics" component={AnalyticsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 };
@@ -71,12 +71,12 @@ const MainNavigator = () => (
     screenOptions={{
       headerShown: false,
       drawerStyle: { backgroundColor: colors.surface, width: 280 },
-      drawerPosition: 'right',
+      drawerPosition: 'left',
       swipeEnabled: true,
     }}
   >
     <Drawer.Screen name="Tabs" component={TabNavigator} />
-    <Drawer.Screen name="Profile" component={ProfileScreen} />
+    <Drawer.Screen name="Analytics" component={AnalyticsScreen} />
     <Drawer.Screen name="Pillars" component={PillarsScreen} />
     <Drawer.Screen name="Achievements" component={AchievementsScreen} />
     <Drawer.Screen name="CompanionMessages" component={CompanionMessagesScreen} />

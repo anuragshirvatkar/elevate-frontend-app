@@ -313,6 +313,7 @@ export interface ProfileResponse {
   email: string;
   dateOfBirth?: string;
   onboardingCompleted: boolean;
+  mindSectionActive: boolean;
   joinedAt: string;
   lastSeenAt?: string;
   socialLinks: SocialLink[];

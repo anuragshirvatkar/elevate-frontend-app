@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform,
-  ActivityIndicator, Image
+  ActivityIndicator, Image, Dimensions, FlatList,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import { activitiesApi, setupApi, uploadsApi } from '../../api';
+import { activitiesApi, setupApi, uploadsApi, helpApi } from '../../api';
+import { useUser } from '../../context/UserContext';
 import type { ActivityLogEntry } from '../../types';
 import { colors, spacing, typography, radius } from '../../theme';
 import { format } from 'date-fns';
@@ -46,6 +47,7 @@ type Step = 'power' | 'craft' | 'purity' | 'mind' | 'done';
 interface SectionActivity {
   activityId: string;
   name: string;
+  isPrimary?: boolean;
   userBookId?: string;
 }
 
@@ -89,6 +91,9 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [craftActivities, setCraftActivities] = useState<SectionActivity[]>([]);
   const [mindBooks, setMindBooks] = useState<MindSetup['books']>([]);
   const [mindActive, setMindActive] = useState(true);
+  const { profile } = useUser();
+  const minDate = profile?.joinedAt ? new Date(profile.joinedAt) : undefined;
+
   const [logState, setLogState] = useState<LogState>({
     power: {},
     craft: {},
@@ -101,7 +106,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [companion, setCompanion] = useState<CompanionDto | null>(null);
   const [hasActivePhase, setHasActivePhase] = useState(false);
   const [purityComplete, setPurityComplete] = useState(false);
-  const [pointsPopup, setPointsPopup] = useState<{ points: number; nextStep: Step } | null>(null);
+  const [pointsPopup, setPointsPopup] = useState<{ points: number; nextStep: Step; msgIdx: number } | null>(null);
+  const usedMsgIndices = React.useRef<number[]>([]);
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
   const [prefillLocked, setPrefillLocked] = useState(false);
   const [mindHasChanges, setMindHasChanges] = useState(false);
@@ -133,8 +139,12 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         setupApi.getMind(),
         setupApi.getProgress(),
       ]);
-      if (power.status === 'fulfilled') setPowerActivities(power.value.data.activities || []);
-      if (craft.status === 'fulfilled') setCraftActivities(craft.value.data.activities || []);
+      if (power.status === 'fulfilled') setPowerActivities(
+        (power.value.data.activities || []).map((a: any) => ({ activityId: a.activityId, name: a.name, isPrimary: a.isPrimary }))
+      );
+      if (craft.status === 'fulfilled') setCraftActivities(
+        (craft.value.data.activities || []).map((a: any) => ({ activityId: a.activityId, name: a.name, isPrimary: a.isPrimary }))
+      );
       if (mind.status === 'fulfilled') {
         const mindData = mind.value.data;
         isMindActive = mindData.isActive;
@@ -158,7 +168,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       const newCraft: Record<string, ActivityEntry> = {};
       let newPurity = { relapseCount: '0', description: '' };
       let hasPurityLog = false;
-      const newMind: Record<string, { didUserDo: boolean; description: string }> = {};
+      const newMind: Record<string, { didUserDo: boolean; description: string; images: string[] }> = {};
 
       for (const log of logs) {
         if (log.section === 'power' && log.activityId) {
@@ -185,6 +195,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           newMind[log.userBookId] = {
             didUserDo: log.didUserDo ?? false,
             description: log.description ?? '',
+            images: log.images ?? [],
           };
         }
       }
@@ -237,11 +248,25 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     });
   };
 
+  const removePower = (id: string) => {
+    setLogState((prev) => {
+      const { [id]: _, ...rest } = prev.power;
+      return { ...prev, power: rest };
+    });
+  };
+
   const updateCraft = (id: string, field: string, value: boolean | string) => {
     setPrefillLocked(false);
     setLogState((prev) => {
       const existing = prev.craft[id] || EMPTY_ACTIVITY;
       return { ...prev, craft: { ...prev.craft, [id]: { ...existing, [field]: value } } };
+    });
+  };
+
+  const removeCraft = (id: string) => {
+    setLogState((prev) => {
+      const { [id]: _, ...rest } = prev.craft;
+      return { ...prev, craft: rest };
     });
   };
 
@@ -296,7 +321,13 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       if (points > 0) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-      setPointsPopup({ points, nextStep });
+      const pool = points > 0 ? GAIN_MSGS : LOSS_MSGS;
+      const available = pool.map((_, i) => i).filter((i) => !usedMsgIndices.current.includes(i));
+      const pickFrom = available.length > 0 ? available : pool.map((_, i) => i);
+      if (available.length === 0) usedMsgIndices.current = [];
+      const msgIdx = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+      usedMsgIndices.current.push(msgIdx);
+      setPointsPopup({ points, nextStep, msgIdx });
     } else if (nextStep === 'done') {
       onComplete();
     } else {
@@ -323,15 +354,6 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         if (pts) totalPoints += pts;
       } catch {}
     }
-    for (const act of powerActivities) {
-      if (!logState.power[act.activityId]) {
-        try {
-          const res = await activitiesApi.logActivity({ section: 'power', activityId: act.activityId, didUserDo: false, date: dateStr });
-          const pts = (res.data as { points?: number }).points;
-          if (pts) totalPoints += pts;
-        } catch {}
-      }
-    }
     return totalPoints;
   };
 
@@ -352,15 +374,6 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         const pts = (res.data as { points?: number }).points;
         if (pts) totalPoints += pts;
       } catch {}
-    }
-    for (const act of craftActivities) {
-      if (!logState.craft[act.activityId]) {
-        try {
-          const res = await activitiesApi.logActivity({ section: 'craft', activityId: act.activityId, didUserDo: false, date: dateStr });
-          const pts = (res.data as { points?: number }).points;
-          if (pts) totalPoints += pts;
-        } catch {}
-      }
     }
     return totalPoints;
   };
@@ -409,9 +422,12 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
               <Ionicons name="arrow-back" size={22} color={colors.text} />
             </TouchableOpacity>
 
-            {/* Center: section icons — display order: power, craft, mind, purity */}
+            {/* Center: section icons — display order: power, craft, purity, mind (hidden if inactive) */}
             <View style={styles.headerIconsRow}>
-              {(['power', 'craft', 'purity', 'mind'] as const).map((section) => {
+              {(['power', 'craft', 'purity', 'mind'] as const).filter((section) => {
+                if (section === 'mind' && !mindActive) return false;
+                return true;
+              }).map((section) => {
                 const completed = completedSections.has(section);
                 const active = section === step;
                 const IconComponent = { power: BicepIcon, craft: CraftIcon, mind: BrainIcon, purity: PurityIcon }[section];
@@ -475,6 +491,17 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   logState={logState.power}
                   onUpdate={updatePower}
                   onUpdateImages={updatePowerImages}
+                  onRemoveActivity={removePower}
+                  resetKey={format(selectedDate, 'yyyy-MM-dd')}
+                  onAddActivity={async (name) => {
+                    try {
+                      const res = await activitiesApi.createCustom(name, 'power');
+                      const act = res.data as any;
+                      const newAct: SectionActivity = { activityId: act.id || act.activityId, name: act.name };
+                      setPowerActivities((prev) => [...prev, newAct]);
+                      return newAct;
+                    } catch { return null; }
+                  }}
                   onActivePhaseChange={setHasActivePhase}
                   companion={companion}
                 />
@@ -485,6 +512,17 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   logState={logState.craft}
                   onUpdate={updateCraft}
                   onUpdateImages={updateCraftImages}
+                  onRemoveActivity={removeCraft}
+                  resetKey={format(selectedDate, 'yyyy-MM-dd')}
+                  onAddActivity={async (name) => {
+                    try {
+                      const res = await activitiesApi.createCustom(name, 'craft');
+                      const act = res.data as any;
+                      const newAct: SectionActivity = { activityId: act.id || act.activityId, name: act.name };
+                      setCraftActivities((prev) => [...prev, newAct]);
+                      return newAct;
+                    } catch { return null; }
+                  }}
                   onActivePhaseChange={setHasActivePhase}
                   companion={companion}
                 />
@@ -532,6 +570,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
               value={selectedDate}
               mode="date"
               display="default"
+              minimumDate={minDate}
               maximumDate={new Date()}
               onChange={(event, date) => {
                 setShowDatePicker(false);
@@ -554,6 +593,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           {pointsPopup && (
             <PointsPopup
               points={pointsPopup.points}
+              msgIdx={pointsPopup.msgIdx}
               companion={companion}
               onContinue={() => {
                 const next = pointsPopup.nextStep;
@@ -733,265 +773,359 @@ const ActivityLogStep: React.FC<{
   logState: Record<string, ActivityEntry>;
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
+  onRemoveActivity: (id: string) => void;
+  onAddActivity: (name: string) => Promise<SectionActivity | null>;
   companion: CompanionDto | null;
   question: string;
   hoursQuestion: string;
   emptyText: string;
+  resetKey?: string;
   onActivePhaseChange?: (active: boolean) => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, companion, question, hoursQuestion, emptyText, onActivePhaseChange }) => {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, companion, question, hoursQuestion, emptyText, resetKey, onActivePhaseChange }) => {
+  const [allActivities, setAllActivities] = useState<SectionActivity[]>(activities);
+  // donePhases: tracks which phases are shown as list rows for the in-progress activity
+  const [donePhases, setDonePhases] = useState<Array<'yesno' | 'hours' | 'notes'>>([]);
   const [confirmedIds, setConfirmedIds] = useState<string[]>(() =>
     activities.filter((a) => a.activityId in logState).map((a) => a.activityId)
   );
   const [activePhase, setActivePhase] = useState<{ id: string; phase: ActivityPhase } | null>(null);
 
+  // Dropdown state
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState(false);
+
+  // Current activity shown in yes/no question — defaults to primary (or first)
+  const getDefaultActivity = (acts: SectionActivity[], excludeIds: string[]): SectionActivity | null => {
+    const available = acts.filter((a) => !excludeIds.includes(a.activityId));
+    return available.find((a) => a.isPrimary) ?? available[0] ?? null;
+  };
+
+  const loggedIds = [...confirmedIds, ...(activePhase ? [activePhase.id] : [])];
+  const [currentId, setCurrentId] = useState<string | null>(() => {
+    if (Object.keys(logState).length > 0) return null;
+    const def = getDefaultActivity(activities, []);
+    return def?.activityId ?? null;
+  });
+
+  useEffect(() => { setAllActivities(activities); }, [activities]);
+
+  // Reset all state on date change
+  const isFirstMount = React.useRef(true);
   useEffect(() => {
-    onActivePhaseChange?.(activePhase !== null);
-  }, [activePhase]);
+    if (isFirstMount.current) { isFirstMount.current = false; return; }
+    setActivePhase(null);
+    setDonePhases([]);
+    setShowDropdown(false);
+    setCustomName('');
+    setShowCustomInput(false);
+    setConfirmedIds([]);
+    const def = getDefaultActivity(activities, []);
+    setCurrentId(def?.activityId ?? null);
+  }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // activity is in the list as soon as answered (even mid-flow), so user can always see + edit it
-  const tweetIds = activePhase
-    ? [...confirmedIds, activePhase.id]
-    : confirmedIds;
+  // Sync confirmedIds when prepopulated from outside (date change with existing records)
+  const logStateKey = Object.keys(logState).join(',');
+  useEffect(() => {
+    if (logStateKey.length > 0 && currentId === null && activePhase === null) {
+      setConfirmedIds(Object.keys(logState));
+      setDonePhases([]);
+    }
+  }, [logStateKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const unanswered = activities.filter((a) => !tweetIds.includes(a.activityId));
+  useEffect(() => { onActivePhaseChange?.(activePhase !== null); }, [activePhase]);
 
-  // yes/no question only shows when no activity is mid-flow
-  const currentForYesNo = activePhase
-    ? null
-    : (activities.find((a) => a.activityId === selectedId) || unanswered[0]);
+  const currentActivity = currentId ? allActivities.find((a) => a.activityId === currentId) ?? null : null;
+  const phaseActivity = activePhase ? allActivities.find((a) => a.activityId === activePhase.id) ?? null : null;
 
-  const phaseActivity = activePhase
-    ? activities.find((a) => a.activityId === activePhase.id)
-    : null;
+  const pickableActivities = allActivities.filter((a) => !loggedIds.includes(a.activityId));
+
+  const handlePickActivity = (act: SectionActivity) => {
+    setCurrentId(act.activityId);
+    setShowDropdown(false);
+    setShowCustomInput(false);
+    setCustomName('');
+  };
+
+  const handleAddCustom = async () => {
+    const name = customName.trim();
+    if (!name) return;
+    setAddingCustom(true);
+    const result = await onAddActivity(name);
+    setAddingCustom(false);
+    if (result) {
+      setAllActivities((prev) => [...prev, result]);
+      setCurrentId(result.activityId);
+      setShowDropdown(false);
+      setShowCustomInput(false);
+      setCustomName('');
+    }
+  };
 
   const handleYesNo = (didDo: boolean) => {
-    if (!currentForYesNo) return;
-    onUpdate(currentForYesNo.activityId, 'didUserDo', didDo);
+    if (!currentActivity) return;
+    onUpdate(currentActivity.activityId, 'didUserDo', didDo);
+    setDonePhases(['yesno']);
     if (didDo) {
-      setActivePhase({ id: currentForYesNo.activityId, phase: 'hours' });
+      setActivePhase({ id: currentActivity.activityId, phase: 'hours' });
     } else {
-      setConfirmedIds((prev) => [...prev, currentForYesNo.activityId]);
+      // answered No — fully done
+      setConfirmedIds((prev) => [...prev, currentActivity.activityId]);
+      setDonePhases([]);
+      setCurrentId(null);
     }
-    setSelectedId(null);
     setShowDropdown(false);
   };
 
   const handleHoursDone = () => {
     if (!activePhase) return;
+    setDonePhases((prev) => [...prev, 'hours']);
     setActivePhase({ id: activePhase.id, phase: 'notes' });
   };
 
   const handleNotesDone = () => {
     if (!activePhase) return;
+    setDonePhases((prev) => [...prev, 'notes']);
     setActivePhase({ id: activePhase.id, phase: 'images' });
   };
 
   const confirmActivity = (id: string) => {
     setConfirmedIds((prev) => [...prev, id]);
+    setDonePhases([]);
     setActivePhase(null);
+    setCurrentId(null);
   };
 
   const handleEdit = (id: string, phase: 'yesno' | 'hours' | 'notes' | 'images' = 'yesno') => {
     setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
+    setDonePhases([]);
     if (phase === 'yesno') {
-      onUpdate(id, 'didUserDo', false);
-      onUpdate(id, 'hours', '');
-      onUpdate(id, 'description', '');
-      onUpdateImages(id, []);
+      onRemoveActivity(id);
       setActivePhase(null);
-      setSelectedId(id);
+      setCurrentId(id);
     } else if (phase === 'hours') {
       onUpdate(id, 'hours', '');
+      setDonePhases(['yesno']);
       setActivePhase({ id, phase: 'hours' });
     } else if (phase === 'notes') {
+      setDonePhases(['yesno', 'hours']);
       setActivePhase({ id, phase: 'notes' });
     } else {
-      // images — keep everything, just re-open the images picker
+      setDonePhases(['yesno', 'hours', 'notes']);
       setActivePhase({ id, phase: 'images' });
     }
   };
 
   return (
     <View style={styles.stepContent}>
-      {activities.length === 0 && <Text style={styles.emptyState}>{emptyText}</Text>}
 
-      {/* One row per answered phase per activity */}
-      {tweetIds.map((id) => {
-        const act = activities.find((a) => a.activityId === id);
+      {/* Fully confirmed activity tweet rows */}
+      {confirmedIds.map((id) => {
+        const act = allActivities.find((a) => a.activityId === id);
         if (!act) return null;
         const s = logState[id];
-        const isActive = activePhase?.id === id;
-        const isConfirmed = confirmedIds.includes(id);
-        const inNotesOrLater = isActive && (activePhase?.phase === 'notes' || activePhase?.phase === 'images');
-        const inImagesPhase = isActive && activePhase?.phase === 'images';
-        const showHoursRow = !!s?.didUserDo && (isConfirmed || inNotesOrLater);
-        const showNotesRow = !!s?.didUserDo && (isConfirmed || inImagesPhase);
-        const showImagesRow = isConfirmed && !!s?.didUserDo && !!(s?.images?.length);
-
         return (
           <React.Fragment key={id}>
-            {/* Row 1 — Yes / No */}
             <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'yesno')}>
-              <TweetSummary
-                companion={companion}
-                name={act.name}
-                subtitle={`${question} it?`}
-                status={s?.didUserDo ? 'Yes' : 'No'}
-                editable
-              />
+              <TweetSummary companion={companion} name={act.name}
+                subtitle={`${question} it?`} status={s?.didUserDo ? 'Yes' : 'No'} editable />
             </TouchableOpacity>
-
-            {/* Row 2 — Hours */}
-            {showHoursRow && (
+            {!!s?.didUserDo && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'hours')}>
-                <TweetSummary
-                  companion={companion}
-                  name={act.name}
-                  subtitle="How many hours?"
-                  status={s?.hours || '—'}
-                  editable
-                />
+                <TweetSummary companion={companion} name={act.name}
+                  subtitle="How many hours?" status={s?.hours || '—'} editable />
               </TouchableOpacity>
             )}
-
-            {/* Row 3 — Notes */}
-            {showNotesRow && (
+            {!!s?.didUserDo && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'notes')}>
-                <TweetSummary
-                  companion={companion}
-                  name={act.name}
-                  subtitle="How did it go?"
-                  status={s?.description || '—'}
-                  editable
-                />
+                <TweetSummary companion={companion} name={act.name}
+                  subtitle="How did it go?" status={s?.description || '—'} editable />
               </TouchableOpacity>
             )}
-
-            {/* Row 4 — Photos (only if user added some) */}
-            {showImagesRow && (
+            {!!s?.didUserDo && !!(s?.images?.length) && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'images')}>
-                <TweetSummary
-                  companion={companion}
-                  name={act.name}
+                <TweetSummary companion={companion} name={act.name}
                   subtitle="Session photos"
-                  status={`${s!.images.length} photo${s!.images.length > 1 ? 's' : ''}`}
-                  editable
-                />
+                  status={`${s!.images.length} photo${s!.images.length > 1 ? 's' : ''}`} editable />
               </TouchableOpacity>
             )}
           </React.Fragment>
         );
       })}
 
-      {/* Phase-specific companion question */}
-      {phaseActivity && activePhase?.phase === 'hours' && (
-        <CompanionBubble companion={companion}>
-          <View style={styles.questionRow}>
-            <Text style={styles.questionText}>{hoursQuestion} </Text>
-            <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
-            <Text style={styles.questionText}>?</Text>
-          </View>
-          <View style={styles.hoursOptionsRow}>
-            {HOURS_OPTIONS.map((opt) => {
-              const selected = logState[phaseActivity.activityId]?.hours === opt.label;
-              return (
-                <TouchableOpacity
-                  key={opt.label}
-                  style={[styles.hoursOption, selected && styles.hoursOptionActive]}
-                  onPress={() => {
-                    onUpdate(phaseActivity.activityId, 'hours', opt.label);
-                    handleHoursDone();
-                  }}
-                >
-                  <Text style={[styles.hoursOptionText, selected && styles.hoursOptionTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </CompanionBubble>
-      )}
-
-      {phaseActivity && activePhase?.phase === 'notes' && (
-        <CompanionBubble companion={companion}>
-          <View style={styles.questionRow}>
-            <Text style={styles.questionText}>Want to talk about how </Text>
-            <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
-            <Text style={styles.questionText}> went?</Text>
-          </View>
-          <View style={styles.hoursWrap}>
-            <View style={styles.inputWithTick}>
-              <TextInput
-                style={[styles.hoursInput, styles.descInput, styles.hoursInputPad]}
-                placeholder="How did the session go? (optional)"
-                placeholderTextColor={colors.textMuted}
-                value={logState[phaseActivity.activityId]?.description || ''}
-                onChangeText={(v) => onUpdate(phaseActivity.activityId, 'description', v)}
-                multiline
-                autoFocus
-              />
-              <TouchableOpacity style={styles.inputTickBtn} onPress={handleNotesDone}>
-                <Ionicons name="checkmark" size={22} color={colors.success} />
+      {/* In-progress activity: show answered phases as list rows, then the active question */}
+      {activePhase && phaseActivity && (() => {
+        const s = logState[activePhase.id];
+        return (
+          <React.Fragment>
+            {/* yes/no answered row */}
+            {donePhases.includes('yesno') && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(activePhase.id, 'yesno')}>
+                <TweetSummary companion={companion} name={phaseActivity.name}
+                  subtitle={`${question} it?`} status={s?.didUserDo ? 'Yes' : 'No'} editable />
               </TouchableOpacity>
-            </View>
-          </View>
-        </CompanionBubble>
-      )}
+            )}
+            {/* hours answered row */}
+            {donePhases.includes('hours') && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(activePhase.id, 'hours')}>
+                <TweetSummary companion={companion} name={phaseActivity.name}
+                  subtitle="How many hours?" status={s?.hours || '—'} editable />
+              </TouchableOpacity>
+            )}
+            {/* notes answered row */}
+            {donePhases.includes('notes') && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(activePhase.id, 'notes')}>
+                <TweetSummary companion={companion} name={phaseActivity.name}
+                  subtitle="How did it go?" status={s?.description || '—'} editable />
+              </TouchableOpacity>
+            )}
 
-      {phaseActivity && activePhase?.phase === 'images' && (
-        <CompanionBubble companion={companion}>
-          <View style={styles.questionRow}>
-            <Text style={styles.questionText}>Share photos from </Text>
-            <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
-            <Text style={styles.questionText}> session?</Text>
-          </View>
-          <Text style={styles.optionalLabel}>optional</Text>
-          <ImageUploadSection
-            images={logState[phaseActivity.activityId]?.images || []}
-            onImagesChange={(imgs) => onUpdateImages(phaseActivity.activityId, imgs)}
-            onConfirm={() => confirmActivity(phaseActivity.activityId)}
-          />
-        </CompanionBubble>
-      )}
+            {/* Active question */}
+            {activePhase.phase === 'hours' && (
+              <CompanionBubble companion={companion}>
+                <View style={styles.questionRow}>
+                  <Text style={styles.questionText}>{hoursQuestion} </Text>
+                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionText}>?</Text>
+                </View>
+                <View style={styles.hoursOptionsRow}>
+                  {HOURS_OPTIONS.map((opt) => {
+                    const selected = s?.hours === opt.label;
+                    return (
+                      <TouchableOpacity
+                        key={opt.label}
+                        style={[styles.hoursOption, selected && styles.hoursOptionActive]}
+                        onPress={() => { onUpdate(activePhase.id, 'hours', opt.label); handleHoursDone(); }}
+                      >
+                        <Text style={[styles.hoursOptionText, selected && styles.hoursOptionTextActive]}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </CompanionBubble>
+            )}
+            {activePhase.phase === 'notes' && (
+              <CompanionBubble companion={companion}>
+                <View style={styles.questionRow}>
+                  <Text style={styles.questionText}>Want to talk about how </Text>
+                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionText}> went?</Text>
+                </View>
+                <View style={styles.hoursWrap}>
+                  <View style={styles.inputWithTick}>
+                    <TextInput
+                      style={[styles.hoursInput, styles.descInput, styles.hoursInputPad]}
+                      placeholder="How did the session go? (optional)"
+                      placeholderTextColor={colors.textMuted}
+                      value={s?.description || ''}
+                      onChangeText={(v) => onUpdate(activePhase.id, 'description', v)}
+                      multiline
+                      autoFocus
+                    />
+                    <TouchableOpacity style={styles.inputTickBtn} onPress={handleNotesDone}>
+                      <Ionicons name="checkmark" size={22} color={colors.success} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </CompanionBubble>
+            )}
+            {activePhase.phase === 'images' && (
+              <CompanionBubble companion={companion}>
+                <View style={styles.questionRow}>
+                  <Text style={styles.questionText}>Share photos from </Text>
+                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionText}> session?</Text>
+                </View>
+                <Text style={styles.optionalLabel}>optional</Text>
+                <ImageUploadSection
+                  images={s?.images || []}
+                  onImagesChange={(imgs) => onUpdateImages(activePhase.id, imgs)}
+                  onConfirm={() => confirmActivity(activePhase.id)}
+                />
+              </CompanionBubble>
+            )}
+          </React.Fragment>
+        );
+      })()}
 
-      {/* Companion yes/no question for next unanswered activity */}
-      {currentForYesNo && (
+      {/* Yes/No with inline dropdown for activity selection */}
+      {currentActivity && !activePhase && (
         <CompanionBubble companion={companion}>
           <View style={styles.questionRow}>
             <Text style={styles.questionText}>{question} </Text>
-            {activities.length > 2 ? (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => setShowDropdown((s) => !s)}
-                style={styles.activityDropdownBtn}
-              >
-                <Text style={styles.activityDropdownText}>
-                  {currentForYesNo.name} <Ionicons name="chevron-down" size={14} color={colors.text} />
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.questionHighlight}>{currentForYesNo.name}</Text>
-            )}
-            <Text style={styles.questionText}>?</Text>
+            {/* Bordered dropdown trigger — inline */}
+            <TouchableOpacity
+              style={[styles.actDropdownTrigger, showDropdown && styles.actDropdownTriggerOpen]}
+              onPress={() => { setShowDropdown((v) => !v); setShowCustomInput(false); setCustomName(''); }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.actDropdownTriggerText}>{currentActivity.name}</Text>
+              <Ionicons name={showDropdown ? 'chevron-up' : 'chevron-down'} size={13} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.questionText}> ?</Text>
           </View>
 
-          {showDropdown && activities.length > 2 && (
-            <View style={styles.dropdown}>
-              {unanswered.map((act) => (
+          {/* Inline dropdown */}
+          {showDropdown && (
+            <View style={styles.actPickerList}>
+              {pickableActivities.map((act) => {
+                const isSelected = act.activityId === currentId;
+                return (
+                  <TouchableOpacity
+                    key={act.activityId}
+                    style={[styles.actPickerItem, isSelected && styles.actPickerItemSelected]}
+                    onPress={() => handlePickActivity(act)}
+                    activeOpacity={0.7}
+                  >
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={14} color={colors.text} style={{ marginRight: 8 }} />
+                    )}
+                    <Text style={[styles.actPickerItemText, isSelected && styles.actPickerItemTextSelected]}>
+                      {act.name}
+                    </Text>
+                    {act.isPrimary && (
+                      <Text style={styles.actPickerPrimaryBadge}>Primary</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+              {pickableActivities.length === 0 && (
+                <Text style={styles.actPickerEmptyText}>No activities</Text>
+              )}
+              <View style={styles.actPickerDivider} />
+              {showCustomInput ? (
+                <View style={styles.actPickerCustomRow}>
+                  <TextInput
+                    style={styles.actPickerCustomInput}
+                    placeholder="Activity name..."
+                    placeholderTextColor={colors.textMuted}
+                    value={customName}
+                    onChangeText={setCustomName}
+                    autoFocus
+                    onSubmitEditing={handleAddCustom}
+                  />
+                  <TouchableOpacity
+                    style={styles.actPickerCustomConfirm}
+                    onPress={handleAddCustom}
+                    disabled={addingCustom || !customName.trim()}
+                  >
+                    {addingCustom
+                      ? <ActivityIndicator size="small" color="#000" />
+                      : <Ionicons name="checkmark" size={18} color="#000" />
+                    }
+                  </TouchableOpacity>
+                </View>
+              ) : (
                 <TouchableOpacity
-                  key={act.activityId}
-                  style={styles.dropdownItem}
-                  onPress={() => {
-                    setSelectedId(act.activityId);
-                    setShowDropdown(false);
-                  }}
+                  style={styles.actPickerAddCustom}
+                  onPress={() => setShowCustomInput(true)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.dropdownItemText}>{act.name}</Text>
+                  <Ionicons name="add-circle-outline" size={16} color="#555" />
+                  <Text style={styles.actPickerAddCustomText}>Add custom activity</Text>
                 </TouchableOpacity>
-              ))}
+              )}
             </View>
           )}
 
@@ -1005,6 +1139,60 @@ const ActivityLogStep: React.FC<{
           </View>
         </CompanionBubble>
       )}
+
+      {/* No activities configured */}
+      {allActivities.length === 0 && (
+        <CompanionBubble companion={companion}>
+          <Text style={styles.questionText}>{emptyText}</Text>
+          <View style={styles.actPickerBtnRow}>
+            <TouchableOpacity
+              style={styles.actPickerBtn}
+              onPress={() => setShowDropdown((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={14} color="#000" />
+              <Text style={styles.actPickerBtnText}>Add activity</Text>
+            </TouchableOpacity>
+          </View>
+          {showDropdown && (
+            <View style={styles.actPickerList}>
+              <View style={styles.actPickerDivider} />
+              {showCustomInput ? (
+                <View style={styles.actPickerCustomRow}>
+                  <TextInput
+                    style={styles.actPickerCustomInput}
+                    placeholder="Activity name..."
+                    placeholderTextColor={colors.textMuted}
+                    value={customName}
+                    onChangeText={setCustomName}
+                    autoFocus
+                    onSubmitEditing={handleAddCustom}
+                  />
+                  <TouchableOpacity
+                    style={styles.actPickerCustomConfirm}
+                    onPress={handleAddCustom}
+                    disabled={addingCustom || !customName.trim()}
+                  >
+                    {addingCustom
+                      ? <ActivityIndicator size="small" color="#000" />
+                      : <Ionicons name="checkmark" size={18} color="#000" />
+                    }
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.actPickerAddCustom}
+                  onPress={() => setShowCustomInput(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add-circle-outline" size={16} color="#555" />
+                  <Text style={styles.actPickerAddCustomText}>Add custom activity</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </CompanionBubble>
+      )}
     </View>
   );
 };
@@ -1014,14 +1202,20 @@ const PowerStep: React.FC<{
   logState: Record<string, ActivityEntry>;
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
+  onRemoveActivity: (id: string) => void;
+  onAddActivity: (name: string) => Promise<SectionActivity | null>;
+  resetKey?: string;
   companion: CompanionDto | null;
   onActivePhaseChange?: (active: boolean) => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, companion, onActivePhaseChange }) => (
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
     onUpdate={onUpdate}
     onUpdateImages={onUpdateImages}
+    onRemoveActivity={onRemoveActivity}
+    onAddActivity={onAddActivity}
+    resetKey={resetKey}
     companion={companion}
     question="Did you go to"
     hoursQuestion="Nice! How many hours did you spend on"
@@ -1035,14 +1229,20 @@ const CraftStep: React.FC<{
   logState: Record<string, ActivityEntry>;
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
+  onRemoveActivity: (id: string) => void;
+  onAddActivity: (name: string) => Promise<SectionActivity | null>;
+  resetKey?: string;
   companion: CompanionDto | null;
   onActivePhaseChange?: (active: boolean) => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, companion, onActivePhaseChange }) => (
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
     onUpdate={onUpdate}
     onUpdateImages={onUpdateImages}
+    onRemoveActivity={onRemoveActivity}
+    onAddActivity={onAddActivity}
+    resetKey={resetKey}
     companion={companion}
     question="Did you work on"
     hoursQuestion="Nice! How many hours did you put into"
@@ -1053,6 +1253,65 @@ const CraftStep: React.FC<{
 
 const RELAPSE_CAUSES = ['Stress', 'Boredom', 'Loneliness', 'Online triggers', 'Late night', 'Other'];
 
+const HELP_ACTIVITIES = [
+  { id: '1', title: 'Take a walk', description: 'Step outside and take a slow walk. Fresh air and movement help reset your mind and break the urge.' },
+  { id: '2', title: 'Do push ups', description: 'Drop and do push ups until you can\'t anymore. Physical exertion is one of the fastest ways to redirect energy.' },
+  { id: '3', title: 'Call a friend', description: 'Pick up the phone and call someone you trust. Talking out loud shifts your headspace immediately.' },
+  { id: '4', title: 'Go for a run', description: 'Put on your shoes and run. Even 10 minutes of running floods your brain with endorphins.' },
+  { id: '5', title: 'Make something to eat', description: 'Go to the kitchen and cook or prepare something. Keeping your hands busy interrupts the pattern.' },
+];
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const HelpCarousel: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
+  const [index, setIndex] = React.useState(0);
+  const flatRef = React.useRef<FlatList>(null);
+
+  const goTo = (i: number) => {
+    setIndex(i);
+    flatRef.current?.scrollToIndex({ index: i, animated: true });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.helpOverlay}>
+        <View style={styles.helpSheet}>
+          <TouchableOpacity style={styles.helpCloseBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.helpHeader}>Need help right now?</Text>
+          <Text style={styles.helpSubHeader}>Try one of these instead</Text>
+          <FlatList
+            ref={flatRef}
+            data={HELP_ACTIVITIES}
+            keyExtractor={(item) => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(e) => {
+              const i = Math.round(e.nativeEvent.contentOffset.x / (SCREEN_WIDTH - 48));
+              setIndex(i);
+            }}
+            renderItem={({ item }) => (
+              <View style={styles.helpCard}>
+                <Text style={styles.helpCardTitle}>{item.title}</Text>
+                <Text style={styles.helpCardDesc}>{item.description}</Text>
+              </View>
+            )}
+          />
+          <View style={styles.helpDots}>
+            {HELP_ACTIVITIES.map((_, i) => (
+              <TouchableOpacity key={i} onPress={() => goTo(i)}>
+                <View style={[styles.helpDot, i === index && styles.helpDotActive]} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 const PurityStep: React.FC<{
   state: { relapseCount: string; description: string };
   onUpdate: (field: string, val: string) => void;
@@ -1060,6 +1319,12 @@ const PurityStep: React.FC<{
   onCompleteChange?: (complete: boolean) => void;
   initialConfirmed?: boolean;
 }> = ({ state, onUpdate, companion, onCompleteChange, initialConfirmed }) => {
+  const [showHelp, setShowHelp] = React.useState(false);
+
+  const handleHelp = async () => {
+    try { await helpApi.trigger(); } catch {}
+    setShowHelp(true);
+  };
   const [mode, setMode] = useState<'question' | 'clean' | 'relapsed'>(() => {
     if (!initialConfirmed) return 'question';
     return parseInt(state.relapseCount || '0', 10) === 0 ? 'clean' : 'relapsed';
@@ -1124,6 +1389,8 @@ const PurityStep: React.FC<{
 
   return (
     <View style={styles.stepContent}>
+      <HelpCarousel visible={showHelp} onClose={() => setShowHelp(false)} />
+
       {confirmed && (
         <TouchableOpacity activeOpacity={0.7} onPress={handleEdit}>
           <TweetSummary
@@ -1137,6 +1404,16 @@ const PurityStep: React.FC<{
       )}
 
       {!confirmed && (
+        <>
+          <TouchableOpacity
+            style={[styles.finishedBookBtn, { marginTop: 5 }]}
+            onPress={handleHelp}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Ionicons name="heart-outline" size={13} color={colors.background} />
+            <Text style={styles.finishedBookBtnText}>Need Help?</Text>
+          </TouchableOpacity>
         <CompanionBubble companion={companion}>
           <View style={styles.questionRow}>
             <Text style={styles.questionText}>Did you stay clean today?</Text>
@@ -1220,6 +1497,7 @@ const PurityStep: React.FC<{
             </View>
           )}
         </CompanionBubble>
+        </>
       )}
     </View>
   );
@@ -1354,8 +1632,8 @@ const MindStep: React.FC<{
       {currentForYesNo && (
         <>
           <TouchableOpacity
-            style={styles.finishedBookBtn}
-            onPress={() => handleMarkComplete(currentForYesNo.userBookId)}
+            style={[styles.finishedBookBtn, { marginTop: 5 }]}
+            onPress={() => onAddBooks?.()}
             activeOpacity={0.7}
             hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
           >
@@ -1420,10 +1698,10 @@ const LOSS_MSGS = [
 
 const PointsPopup: React.FC<{
   points: number;
+  msgIdx: number;
   companion: CompanionDto | null;
   onContinue: () => void;
-}> = ({ points, companion, onContinue }) => {
-  const [msgIdx] = useState(() => Math.floor(Math.random() * (points > 0 ? GAIN_MSGS.length : LOSS_MSGS.length)));
+}> = ({ points, msgIdx, companion, onContinue }) => {
   const isGain = points > 0;
   const name = companion?.name ?? 'Your companion';
   const badgeColor = isGain ? colors.success : colors.error;
@@ -1566,7 +1844,6 @@ const styles = StyleSheet.create({
   },
   imageThumbnailOverlay: {
     position: 'absolute',
-    inset: 0,
     top: 0,
     left: 0,
     right: 0,
@@ -1762,6 +2039,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // Help carousel
+  helpOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  helpSheet: { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: spacing.lg, paddingBottom: spacing.xl, borderWidth: 1, borderColor: colors.border },
+  helpCloseBtn: { position: 'absolute', top: spacing.md, right: spacing.md, zIndex: 1 },
+  helpHeader: { ...typography.h3, color: colors.text, textAlign: 'center', marginBottom: 2 },
+  helpSubHeader: { ...typography.bodySmall, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg },
+  helpCard: { width: SCREEN_WIDTH - 48, marginHorizontal: 24, backgroundColor: colors.cardElevated, borderRadius: 16, padding: spacing.xl, alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border, minHeight: 180, justifyContent: 'center' },
+  helpCardTitle: { ...typography.h2, color: colors.text, textAlign: 'center' },
+  helpCardDesc: { ...typography.body, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  helpDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: spacing.lg },
+  helpDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
+  helpDotActive: { backgroundColor: colors.text, width: 18 },
+
   // Points popup
   pointsOverlay: {
     position: 'absolute',
@@ -1872,6 +2162,136 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
     marginLeft: 'auto',
+  },
+
+  // Activity dropdown trigger (inline in question row)
+  actDropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    backgroundColor: '#111',
+  },
+  actDropdownTriggerOpen: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomColor: '#111',
+  },
+  actDropdownTriggerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  actPickerPrimaryBadge: {
+    fontSize: 10,
+    color: '#888',
+    marginLeft: 'auto',
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+
+  // Activity picker
+  actPickerBtnRow: {
+    marginTop: 12,
+  },
+  actPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.text,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  actPickerBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  actPickerList: {
+    marginTop: 0,
+    backgroundColor: '#111',
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: '#333',
+    overflow: 'hidden',
+  },
+  actPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  actPickerItemText: {
+    fontSize: 14,
+    color: colors.text,
+    flex: 1,
+  },
+  actPickerItemSelected: {
+    backgroundColor: '#1a1a1a',
+    borderLeftWidth: 2,
+    borderLeftColor: colors.text,
+  },
+  actPickerItemTextSelected: {
+    fontWeight: '600',
+    color: colors.text,
+  },
+  actPickerEmptyText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  actPickerDivider: {
+    height: 1,
+    backgroundColor: '#222',
+  },
+  actPickerAddCustom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  actPickerAddCustomText: {
+    fontSize: 14,
+    color: '#555',
+  },
+  actPickerCustomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  actPickerCustomInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  actPickerCustomConfirm: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.text,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     fontSize: 56,
   },
   speechBubble: {
-    backgroundColor: '#161616',
+    backgroundColor: '#000000',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: 16,
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 10,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: '#161616',
+    borderBottomColor: '#000000',
   },
   bubbleText: {
     ...typography.body,

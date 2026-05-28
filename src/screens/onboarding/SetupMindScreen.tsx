@@ -698,7 +698,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
             </View>
             <Text style={styles.introTitle}>Mind</Text>
             <Text style={styles.introBody}>
-              This pillar focuses on your mental growth. what you read, learn, and reflect on daily.
+              This pillar focuses on your Reading. what you read, learn, and reflect on daily.
             </Text>
             <View style={styles.introBullets}>
               <Text style={styles.introBullet}>• Points as you complete reading sessions</Text>

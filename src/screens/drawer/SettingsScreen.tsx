@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch
 } from 'react-native';
@@ -17,6 +17,12 @@ const SettingsScreen = () => {
   const { showAlert } = useAlert();
   const [mindActive, setMindActive] = useState(true);
   const [togglingMind, setTogglingMind] = useState(false);
+
+  useEffect(() => {
+    setupApi.getMind()
+      .then(({ data }: any) => setMindActive(data?.isActive ?? true))
+      .catch(() => {});
+  }, []);
 
   const toggleMind = async (value: boolean) => {
     setTogglingMind(true);

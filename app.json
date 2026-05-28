@@ -20,7 +20,10 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.nexgen.elevate"
+      "package": "com.nexgen.elevate",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,10 +36,15 @@
           "photosPermission": "Allow Elevate to access your photos.",
           "cameraPermission": "Allow Elevate to use your camera."
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "extra": {
-      "API_BASE_URL": "http://localhost:3000"
-    }
+      "API_BASE_URL": "https://api.elevateyourlife.app",
+      "eas": {
+        "projectId": "bb1958d6-83d6-427d-9313-243fc78d9b1d"
+      }
+    },
+    "owner": "nexgensoftwares"
   }
 }

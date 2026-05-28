@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, DrawerActions, useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
@@ -79,17 +80,29 @@ const HomeScreen = () => {
   const [isLoadingLast7Days, setIsLoadingLast7Days] = useState(false);
   const [isStreakCollapsed, setIsStreakCollapsed] = useState(false);
   const [hasLogs, setHasLogs] = useState(false);
-  const [showTooltip, setShowTooltip] = useState(true);
+  const [showTooltip, setShowTooltip] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem('journey_tooltip_dismissed').then((val) => {
+      if (!val) setShowTooltip(true);
+    });
+  }, []);
+
+  const dismissTooltip = () => {
+    setShowTooltip(false);
+    AsyncStorage.setItem('journey_tooltip_dismissed', '1');
+  };
+
   const animatedHeight = useRef(new Animated.Value(0)).current;
 
   const [recordsData, setRecordsData] = useState<Record<string, ActivityLogEntry[]>>({});
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [activeFilter, setActiveFilter] = useState({ days: 7, sections: ['power', 'craft', 'purity', 'mind'] as string[], fromDate: null as Date | null, toDate: null as Date | null });
-  const [pendingFilter, setPendingFilter] = useState({ days: 7, sections: ['power', 'craft', 'purity', 'mind'] as string[], fromDate: null as Date | null, toDate: null as Date | null });
+  const defaultSections = ['power', 'craft', 'purity', 'mind'] as string[];
+  const [activeFilter, setActiveFilter] = useState({ days: 7, sections: defaultSections, fromDate: null as Date | null, toDate: null as Date | null });
+  const [pendingFilter, setPendingFilter] = useState({ days: 7, sections: defaultSections, fromDate: null as Date | null, toDate: null as Date | null });
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
   const isFilterActive = activeFilter.days !== 7 || activeFilter.sections.length < 4 || !!(activeFilter.fromDate && activeFilter.toDate);
@@ -271,6 +284,7 @@ const HomeScreen = () => {
 
   const streaks = profile?.stats?.currentStreaks;
   const totalPoints = profile?.stats?.totalPoints || 0;
+  const mindSectionActive = profile?.mindSectionActive ?? true;
   const username = profile?.username || user?.email?.split('@')[0] || 'Champion';
   const selectedAvatar = profile?.avatars?.find(a => a.isSelected);
   const profileImageUrl = selectedAvatar?.profileImageUrl;
@@ -436,7 +450,10 @@ const HomeScreen = () => {
               ))}
             </View>
 
-            {(['power','craft','mind','purity'] as const).map(
+            {(['power','craft','mind','purity'] as const).filter(section => {
+              if (section === 'mind' && !mindSectionActive) return false;
+              return true;
+            }).map(
               (section) => (
                 <View
                   key={section}
@@ -464,7 +481,7 @@ const HomeScreen = () => {
                         ? sectionData.find((entry:any) => entry.date === day.date)
                         : undefined;
                       const isPurity = section === 'purity';
-                      const value = isPurity ? entry?.didUserRelapse : entry?.didUserDo;
+                      const value = isPurity ? entry?.didUserRelapse === false : entry?.didUserDo;
 
                       let dotStyle: any = styles.dot;
 
@@ -476,7 +493,7 @@ const HomeScreen = () => {
                             borderColor: colors.success,
                           }
                         ];
-                      } else if (value === false) {
+                      } else if (isPurity && entry?.didUserRelapse === true) {
                         dotStyle = [
                           styles.dot,
                           {
@@ -531,7 +548,7 @@ const HomeScreen = () => {
                     <Text style={styles.recordsDateLabel}>{formatRecordDate(date)}</Text>
                     <View style={styles.recordsList}>
                       {(['power', 'craft', 'mind', 'purity'] as const)
-                        .filter(sec => sectionMap.has(sec))
+                        .filter(sec => sectionMap.has(sec) && (sec !== 'mind' || mindSectionActive))
                         .map(sec => {
                           const log = sectionMap.get(sec)!;
                           const Icon = SECTION_ICONS[sec];
@@ -578,7 +595,7 @@ const HomeScreen = () => {
           <View style={styles.fabTooltip}>
             <TouchableOpacity
               style={styles.tooltipCloseButton}
-              onPress={() => setShowTooltip(false)}
+              onPress={dismissTooltip}
             >
               <Ionicons name="close" size={14} color={colors.background} />
             </TouchableOpacity>
@@ -589,7 +606,7 @@ const HomeScreen = () => {
             <View style={styles.fabTooltipArrow} />
           </View>
         )}
-        <TouchableOpacity style={styles.fab} onPress={() => setShowLogModal(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.fab} onPress={() => { setShowLogModal(true); dismissTooltip(); }} activeOpacity={0.85}>
           <GrowIcon width={18} height={18} fill={colors.background} />
         </TouchableOpacity>
       </View>
@@ -607,7 +624,7 @@ const HomeScreen = () => {
 
             <Text style={styles.filterSectionLabel}>Sections</Text>
             <View style={styles.filterChipsRow}>
-              {(['power', 'craft', 'purity', 'mind'] as const).map(sec => {
+              {(['power', 'craft', 'purity', 'mind'] as const).filter(sec => sec !== 'mind' || mindSectionActive).map(sec => {
                 const on = pendingFilter.sections.includes(sec);
                 return (
                   <TouchableOpacity

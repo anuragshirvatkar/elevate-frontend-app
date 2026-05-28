@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
 import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,7 +15,7 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { label: 'Profile', icon: 'person-outline', screen: 'Profile' },
+  { label: 'Analytics', icon: 'bar-chart-outline', screen: 'Analytics' },
   { label: 'Pillars', icon: 'layers-outline', screen: 'Pillars' },
   { label: 'Achievements', icon: 'medal-outline', screen: 'Achievements' },
   { label: 'Support', icon: 'help-circle-outline', screen: 'Support' },
@@ -28,6 +28,9 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
   const { profile } = useUser();
   const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
+
+  const selectedAvatar = profile?.avatars?.find((a: any) => a.isSelected);
+  const profileImageUrl = selectedAvatar?.profileImageUrl;
 
   const confirmLogout = () => {
     showAlert(
@@ -49,9 +52,11 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {(profile?.username || user?.email || 'U')[0].toUpperCase()}
-          </Text>
+          {profileImageUrl ? (
+            <Image source={{ uri: profileImageUrl }} style={styles.avatarImage} resizeMode="cover" />
+          ) : (
+            <Ionicons name="person" size={24} color={colors.textMuted} />
+          )}
         </View>
         <View style={styles.headerInfo}>
           <Text style={styles.username}>{profile?.username || user?.email?.split('@')[0] || 'User'}</Text>
@@ -107,11 +112,17 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: colors.cardElevated,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
   },
-  avatarText: { ...typography.h3, color: colors.text },
+  avatarImage: { width: 48, height: 48, borderRadius: 24 },
   headerInfo: { flex: 1 },
   username: { ...typography.h4, color: colors.text },
   points: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },

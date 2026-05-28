@@ -291,6 +291,17 @@ const ProfileScreen = () => {
         {/* ── Danger Zone ── */}
         <View style={styles.dangerSection}>
           <TouchableOpacity
+            style={styles.logoutBtn}
+            onPress={() => showAlert('Log Out', 'Are you sure you want to log out?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Log Out', style: 'destructive', onPress: logout },
+            ])}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={16} color={colors.error} />
+            <Text style={styles.logoutBtnText}>Log Out</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.deleteBtn}
             onPress={handleDeleteAccount}
             activeOpacity={0.7}
@@ -477,6 +488,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
     gap: spacing.xs,
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  logoutBtnText: {
+    ...typography.body,
+    color: colors.error,
+    fontSize: 15,
   },
   deleteBtn: {
     flexDirection: 'row',
