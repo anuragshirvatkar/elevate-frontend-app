@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/elevate-logo.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#000000"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.nexgen.elevate"
