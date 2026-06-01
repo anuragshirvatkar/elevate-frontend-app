@@ -1,6 +1,6 @@
-import apiClient from './client';
+import { silentApiClient } from './client';
 
 export const appTrackingApi = {
   trackOpen: () =>
-    apiClient.post<{ success: boolean }>('/app-tracking/open'),
+    silentApiClient.post<{ success: boolean }>('/app-tracking/open'),
 };

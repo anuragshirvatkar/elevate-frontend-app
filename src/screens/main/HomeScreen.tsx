@@ -481,26 +481,23 @@ const HomeScreen = () => {
                         ? sectionData.find((entry:any) => entry.date === day.date)
                         : undefined;
                       const isPurity = section === 'purity';
-                      const value = isPurity ? entry?.didUserRelapse === false : entry?.didUserDo;
 
-                      let dotStyle: any = styles.dot;
+                      let dotStyle: any = [styles.dot, { backgroundColor: 'transparent', borderColor: 'transparent' }];
 
-                      if (value === true) {
-                        dotStyle = [
-                          styles.dot,
-                          {
-                            backgroundColor: colors.success,
-                            borderColor: colors.success,
+                      if (entry) {
+                        if (isPurity) {
+                          if (entry.didUserRelapse === false) {
+                            dotStyle = [styles.dot, { backgroundColor: colors.success, borderColor: colors.success }];
+                          } else if (entry.didUserRelapse === true) {
+                            dotStyle = [styles.dot, { backgroundColor: '#FF4444', borderColor: '#FF4444' }];
                           }
-                        ];
-                      } else if (isPurity && entry?.didUserRelapse === true) {
-                        dotStyle = [
-                          styles.dot,
-                          {
-                            backgroundColor: '#FF4444',
-                            borderColor: '#FF4444',
+                        } else {
+                          if (entry.didUserDo === true) {
+                            dotStyle = [styles.dot, { backgroundColor: colors.success, borderColor: colors.success }];
+                          } else if (entry.didUserDo === false) {
+                            dotStyle = [styles.dot, { backgroundColor: '#FF4444', borderColor: '#FF4444' }];
                           }
-                        ];
+                        }
                       }
 
                       return (

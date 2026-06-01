@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, ActivityIndicator, Image, Modal,
@@ -15,9 +15,9 @@ import type { SupportIssueType, SupportTicket } from '../../types';
 
 const ISSUE_TYPES: { label: string; value: SupportIssueType }[] = [
   { label: 'Bug', value: 'bug' },
-  { label: 'Feature Request', value: 'feature_request' },
+  { label: 'Feature Request', value: 'feature' },
+  { label: 'Feedback', value: 'feedback' },
   { label: 'Account', value: 'account' },
-  { label: 'Payment', value: 'payment' },
   { label: 'Other', value: 'other' },
 ];
 
@@ -57,6 +57,8 @@ const SupportScreen = () => {
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<PickedImage[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  const formScrollRef = useRef<ScrollView>(null);
 
   const loadTickets = useCallback(async () => {
     try {
@@ -218,7 +220,7 @@ const SupportScreen = () => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView ref={formScrollRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {/* Issue Type dropdown */}
               <Text style={styles.fieldLabel}>Issue Type</Text>
               <TouchableOpacity style={styles.dropdown} onPress={() => setShowDropdown(true)} activeOpacity={0.7}>
@@ -235,6 +237,7 @@ const SupportScreen = () => {
                 value={ticketTitle}
                 onChangeText={setTicketTitle}
                 maxLength={150}
+                onFocus={() => setTimeout(() => formScrollRef.current?.scrollToEnd({ animated: true }), 300)}
               />
 
               {/* Description */}
@@ -248,6 +251,7 @@ const SupportScreen = () => {
                 multiline
                 maxLength={5000}
                 textAlignVertical="top"
+                onFocus={() => setTimeout(() => formScrollRef.current?.scrollToEnd({ animated: true }), 300)}
               />
               <Text style={styles.charCount}>{description.length}/5000</Text>
 

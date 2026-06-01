@@ -6,16 +6,34 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.elevateyourlife.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "703049957569-m88qem3d2sqhf7g1rt8kb4je8juo87jo.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "703049957569-78u8qtf8gkapjmqbho1ecufrli2t6k0s.apps.googleusercontent.com"
+      }
     },
-    "preview":  {
+    "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.elevateyourlife.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "703049957569-m88qem3d2sqhf7g1rt8kb4je8juo87jo.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "703049957569-78u8qtf8gkapjmqbho1ecufrli2t6k0s.apps.googleusercontent.com"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.elevateyourlife.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "703049957569-m88qem3d2sqhf7g1rt8kb4je8juo87jo.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "703049957569-78u8qtf8gkapjmqbho1ecufrli2t6k0s.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {

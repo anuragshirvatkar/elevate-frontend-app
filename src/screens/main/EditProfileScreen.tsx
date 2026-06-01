@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Image, FlatList,
-  KeyboardAvoidingView, Platform, Modal, Dimensions,
+  KeyboardAvoidingView, Platform, Modal, Dimensions, Linking, ActionSheetIOS,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -181,7 +181,7 @@ const EditProfileScreen = () => {
 
       await profileApi.edit({
         username: username !== profile?.username ? username : undefined,
-        dateOfBirth: dobDate ? dobDate.toISOString().split('T')[0] : undefined,
+        dateOfBirth: dobDate ? `${dobDate.getFullYear()}-${String(dobDate.getMonth() + 1).padStart(2, '0')}-${String(dobDate.getDate()).padStart(2, '0')}` : undefined,
         socialLinks: links,
         avatarId: selectedAvatarId !== origAvatarId ? selectedAvatarId : undefined,
         companionId: selectedCompanionId !== origCompanionId ? selectedCompanionId : undefined,
@@ -267,7 +267,7 @@ const EditProfileScreen = () => {
             <TouchableOpacity style={styles.inputRow} onPress={() => setShowDobPicker(true)} activeOpacity={0.8}>
               <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
               <Text style={[styles.input, { paddingVertical: 0, color: dobDate ? colors.text : colors.textMuted }]}>
-                {dobDate ? fmtDateDisplay(dobDate.toISOString()) : 'Select date of birth'}
+                {dobDate ? new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'Select date of birth'}
               </Text>
             </TouchableOpacity>
             {showDobPicker && Platform.OS === 'ios' && (
@@ -314,14 +314,36 @@ const EditProfileScreen = () => {
               <View style={styles.socialList}>
                 {Object.entries(socialLinks).map(([platform, url]) => {
                   const p = SOCIAL_PLATFORMS.find((s) => s.key === platform);
+                  const slug = url.split('/').filter(Boolean).pop() || url;
+                  const handleChipPress = () => {
+                    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+                    if (Platform.OS === 'ios') {
+                      ActionSheetIOS.showActionSheetWithOptions(
+                        { options: ['Cancel', 'Open in App', 'Open in Browser'], cancelButtonIndex: 0 },
+                        (i) => {
+                          if (i === 1) Linking.openURL(fullUrl);
+                          if (i === 2) Linking.openURL(fullUrl);
+                        }
+                      );
+                    } else {
+                      showAlert(
+                        `Open ${p?.label || platform}`,
+                        url,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Open', onPress: () => Linking.openURL(fullUrl) },
+                        ]
+                      );
+                    }
+                  };
                   return (
-                    <View key={platform} style={styles.socialChip}>
+                    <TouchableOpacity key={platform} style={styles.socialChip} onPress={handleChipPress} activeOpacity={0.75}>
                       <Ionicons name={(p?.icon || 'link-outline') as any} size={16} color={colors.text} />
-                      <Text style={styles.socialChipText} numberOfLines={1}>{url}</Text>
+                      <Text style={styles.socialChipText} numberOfLines={1}>@{slug}</Text>
                       <TouchableOpacity onPress={() => setSocialLinks((prev) => { const n = { ...prev }; delete n[platform]; return n; })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Ionicons name="close" size={14} color="#555" />
                       </TouchableOpacity>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>

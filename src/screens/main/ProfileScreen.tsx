@@ -83,7 +83,6 @@ const ProfileScreen = () => {
 
   const streaks = profile?.stats?.currentStreaks;
   const longestStreaks = profile?.stats?.longestStreaks;
-  const achievements = profile?.achievements || [];
   const selectedAvatar = profile?.avatars?.find((a) => a.isSelected);
   const activeCompanion = profile?.companions?.find((c) => c.isActive);
   const socialLinks = profile?.socialLinks || [];
@@ -242,49 +241,6 @@ const ProfileScreen = () => {
         ) : null}
 
         {activeCompanion ? <View style={styles.divider} /> : null}
-
-        {/* ── Achievements ── */}
-        {achievements.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Achievements</Text>
-            {achievements.map((a, idx) => (
-              <View key={a.id} style={[styles.achievementRow, idx < achievements.length - 1 && styles.achievementBorder]}>
-                <View style={[styles.achievementIconWrap, !a.isUnlocked && styles.achievementIconWrapLocked]}>
-                  {!a.isUnlocked ? (
-                    <Ionicons name="lock-closed" size={16} color="#444" />
-                  ) : a.iconUrl ? (
-                    <Image
-                      source={{ uri: a.iconUrl }}
-                      style={styles.achievementIconImg}
-                      resizeMode="cover"
-                      tintColor={['Opened the Book', 'Thinking Begins', 'Strong Mind'].includes(a.name) ? undefined : '#ffffff'}
-                    />
-                  ) : (
-                    <Ionicons name="trophy" size={17} color="#fff" />
-                  )}
-                </View>
-                <View style={styles.achievementBody}>
-                  <Text style={[styles.achievementName, !a.isUnlocked && styles.achievementLocked]}>{a.name}</Text>
-                  <Text style={styles.achievementDesc} numberOfLines={1}>{a.description}</Text>
-                  {a.isUnlocked ? (
-                    <View style={styles.achievementMeta}>
-                      <Ionicons name="time-outline" size={10} color="#555" />
-                      <Text style={styles.achievementMetaText}>{fmtDate(a.unlockedAt)}</Text>
-                      {a.usersUnlockedCount !== undefined && (
-                        <>
-                          <Text style={styles.achievementMetaDot}>·</Text>
-                          <Ionicons name="people-outline" size={10} color="#555" />
-                          <Text style={styles.achievementMetaText}>{a.usersUnlockedCount.toLocaleString()} others</Text>
-                        </>
-                      )}
-                    </View>
-                  ) : null}
-                </View>
-                {a.isUnlocked && <Ionicons name="checkmark-circle" size={18} color="#3DFF86" />}
-              </View>
-            ))}
-          </View>
-        )}
 
         <View style={styles.divider} />
 

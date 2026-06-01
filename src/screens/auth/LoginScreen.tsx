@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, KeyboardAvoidingView,
-  Platform, TouchableOpacity, ScrollView, ActivityIndicator,
+  Platform, TouchableOpacity, ScrollView, ActivityIndicator, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import type { AuthStackScreenProps } from '../../navigation/types';
 import { authApi } from '../../api';
 import Input from '../../components/common/Input';
@@ -16,8 +15,9 @@ import { colors, spacing, typography, radius } from '../../theme';
 import { useAlert } from '../../context/AlertContext';
 import { useAuth } from '../../context/AuthContext';
 
-// Required so the in-app browser can hand control back to the app after OAuth.
-WebBrowser.maybeCompleteAuthSession();
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+});
 
 const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) => {
   const { showAlert } = useAlert();
@@ -27,14 +27,6 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
-
-  // expo-auth-session Google provider. Uses the Web client ID for Expo Go /
-  // web; the native client IDs kick in automatically on standalone builds.
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  });
 
   const validate = () => {
     if (!email.trim()) { setEmailError('Email is required'); return false; }
@@ -60,36 +52,31 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
   };
 
   const handleGoogleSignIn = async () => {
-    if (!request) {
-      showAlert('Not Ready', 'Google sign-in is still loading. Please try again in a moment.');
-      return;
-    }
     setGoogleLoading(true);
+    let loggedIn = false;
     try {
-      const result = await promptAsync();
-
-      if (result.type === 'success') {
-        const idToken = result.params?.id_token;
-        if (!idToken) {
-          showAlert('Error', 'Could not retrieve Google ID token. Please try again.');
-          return;
-        }
-
-        // Exchange the Google ID token with our backend.
-        const { data } = await authApi.googleLogin(idToken);
-
-        // Stores tokens in AsyncStorage and updates auth state.
-        // RootNavigator then routes to Onboarding or Main automatically.
-        await login(data.accessToken, data.refreshToken, data.user);
-
-      } else if (result.type === 'error') {
-        const msg = result.error?.message ?? 'Google sign-in failed. Please try again.';
-        showAlert('Sign In Failed', msg);
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.data?.idToken;
+      if (!idToken) {
+        showAlert('Error', 'Could not retrieve Google ID token. Please try again.');
+        return;
       }
-      // type 'cancel' / 'dismiss' — user closed the browser, do nothing
+      const { data } = await authApi.googleLogin(idToken);
+      loggedIn = true;
+      await login(data.accessToken, data.refreshToken, data.user);
     } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Google sign-in failed. Please try again.';
-      showAlert('Error', msg);
+      if (loggedIn) return;
+      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+        // user cancelled, do nothing
+      } else if (err.code === statusCodes.IN_PROGRESS) {
+        showAlert('Please wait', 'Sign-in is already in progress.');
+      } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        showAlert('Error', 'Google Play Services not available.');
+      } else {
+        const msg = err?.response?.data?.message || 'Google sign-in failed. Please try again.';
+        showAlert('Error', msg);
+      }
     } finally {
       setGoogleLoading(false);
     }
@@ -123,12 +110,14 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
               error={emailError}
               returnKeyType="done"
               onSubmitEditing={handleSendOtp}
+              editable={!googleLoading}
             />
 
             <Button
               title="Continue"
               onPress={handleSendOtp}
               loading={loading}
+              disabled={googleLoading}
               fullWidth
               size="lg"
               variant="light"
@@ -146,11 +135,11 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
             <TouchableOpacity
               style={[
                 styles.googleButton,
-                (googleLoading || !request) && styles.googleButtonDisabled,
+                googleLoading && styles.googleButtonDisabled,
               ]}
               onPress={handleGoogleSignIn}
               activeOpacity={0.7}
-              disabled={googleLoading || !request}
+              disabled={googleLoading}
             >
               {googleLoading ? (
                 <ActivityIndicator size="small" color={colors.text} />
@@ -168,9 +157,7 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
             <Text
               style={styles.disclaimerLink}
               onPress={() =>
-                WebBrowser.openBrowserAsync(
-                  'https://elevateyourlife.app/privacy-policy'
-                )
+                Linking.openURL('https://elevateyourlife.app/privacy-policy')
               }
             >
               Terms & Privacy Policy

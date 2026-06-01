@@ -87,13 +87,18 @@ const RecordDetailScreen = () => {
       const relapseCount = log?.relapseCount ?? null;
       const isClean = log ? (relapseCount ?? 0) === 0 : null;
       return (
-        <FieldRow
-          icon="shield-checkmark"
-          iconColor={isClean === true ? colors.success : '#FF4444'}
-          label="Did you stay clean?"
-          value={log ? (isClean ? 'Yes — Clean' : `No — ${relapseCount} relapse${relapseCount !== 1 ? 's' : ''}`) : '—'}
-          empty={!log}
-        />
+        <>
+          <FieldRow
+            icon="shield-checkmark"
+            iconColor={isClean === true ? colors.success : '#FF4444'}
+            label="Did you stay clean?"
+            value={log ? (isClean ? 'Yes — Clean' : `No — ${relapseCount} relapse${relapseCount !== 1 ? 's' : ''}`) : '—'}
+            empty={!log}
+          />
+          {!isClean && log?.reasonIfNo ? (
+            <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log.reasonIfNo} />
+          ) : null}
+        </>
       );
     }
     if (section === 'mind') {
@@ -102,9 +107,17 @@ const RecordDetailScreen = () => {
       return (
         <>
           <FieldRow icon="book" iconColor="#54A9FF" label="Did you read?" value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
-          <FieldRow icon="library" iconColor="#54A9FF" label="Book" value={bookTitle || '—'} empty={!bookTitle} />
-          <FieldRow icon="time-outline" iconColor="#54A9FF" label="Hours" value={log ? formatHours(log.hours) : '—'} empty={!log?.hours} />
-          <FieldRow icon="chatbubble-outline" iconColor="#54A9FF" label="Notes" value={log?.description || '—'} empty={!log?.description} />
+          {bookTitle && <FieldRow icon="library" iconColor="#54A9FF" label="Book" value={bookTitle} />}
+          {didDo && log?.description ? <FieldRow icon="chatbubble-outline" iconColor="#54A9FF" label="Notes" value={log.description} /> : null}
+          {!didDo && log?.reasonIfNo ? <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log.reasonIfNo} /> : null}
+          {didDo && log?.images && log.images.length > 0 && (
+            <View style={styles.imagesSection}>
+              <Text style={styles.imagesLabel}>Photos ({log.images.length})</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {log.images.map((uri, i) => <Image key={i} source={{ uri }} style={styles.thumbnail} />)}
+              </ScrollView>
+            </View>
+          )}
         </>
       );
     }
@@ -113,10 +126,10 @@ const RecordDetailScreen = () => {
     return (
       <>
         <FieldRow icon="checkmark-circle-outline" iconColor={iconColor} label={section === 'power' ? 'Did you train?' : 'Did you work on your craft?'} value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
-        <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={log ? formatHours(log.hours) : '—'} empty={!log?.hours} />
-        <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={log?.description || '—'} empty={!log?.description} />
-        {!didDo && <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log?.reasonIfNo || '—'} empty={!log?.reasonIfNo} />}
-        {log?.images && log.images.length > 0 && (
+        {didDo && log?.hours ? <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={formatHours(log.hours)} /> : null}
+        {didDo && log?.description ? <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={log.description} /> : null}
+        {!didDo && log?.reasonIfNo ? <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log.reasonIfNo} /> : null}
+        {didDo && log?.images && log.images.length > 0 && (
           <View style={styles.imagesSection}>
             <Text style={styles.imagesLabel}>Photos ({log.images.length})</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>

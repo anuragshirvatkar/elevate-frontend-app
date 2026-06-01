@@ -23,6 +23,7 @@ const BooksScreen = () => {
   const [author, setAuthor] = useState('');
   const [adding, setAdding] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const loadBooks = async () => {
     try {
@@ -63,6 +64,19 @@ const BooksScreen = () => {
       showAlert('Error', e?.response?.data?.message || 'Failed to generate summary.');
     } finally {
       setGeneratingSummary(null);
+    }
+  };
+
+  const handleDeleteBook = async (bookId: string) => {
+    setDeleting(bookId);
+    try {
+      await booksApi.deleteCustom(bookId);
+      showAlert('Success', 'Book deleted successfully.');
+      await loadBooks();
+    } catch (e: any) {
+      showAlert('Error', e?.response?.data?.message || 'Failed to delete book.');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -116,11 +130,26 @@ const BooksScreen = () => {
                   <Text style={styles.bookTitle}>{book.title}</Text>
                   {book.author && <Text style={styles.bookAuthor}>{book.author}</Text>}
                 </View>
-                {book.isCompleted && (
-                  <View style={styles.completedBadge}>
-                    <Text style={styles.completedText}>Done ✓</Text>
-                  </View>
-                )}
+                <View style={styles.headerActions}>
+                  {book.isCompleted && (
+                    <View style={styles.completedBadge}>
+                      <Text style={styles.completedText}>Done ✓</Text>
+                    </View>
+                  )}
+                  {book.isCustom && (
+                    <TouchableOpacity
+                      onPress={() => handleDeleteBook(book.userBookId)}
+                      disabled={deleting === book.userBookId}
+                      style={styles.deleteBtn}
+                    >
+                      {deleting === book.userBookId ? (
+                        <ActivityIndicator size="small" color={colors.error} />
+                      ) : (
+                        <Ionicons name="trash-outline" size={18} color={colors.error} />
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
               {book.totalPages && (
                 <View style={styles.pagesRow}>
@@ -175,6 +204,8 @@ const styles = StyleSheet.create({
   bookInfo: { flex: 1 },
   bookTitle: { ...typography.h4, color: colors.text },
   bookAuthor: { ...typography.bodySmall, color: colors.textMuted },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  deleteBtn: { padding: spacing.xs },
   completedBadge: { backgroundColor: colors.mind + '22', paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.full },
   completedText: { ...typography.caption, color: colors.mind },
   pagesRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },

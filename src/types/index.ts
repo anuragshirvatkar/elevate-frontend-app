@@ -180,6 +180,7 @@ export interface UserBook {
   isCompleted: boolean;
   completedAt?: string;
   aiSummary?: string;
+  isCustom?: boolean;
 }
 
 // ─── Journals ──────────────────────────────────────────────────────────────
@@ -191,6 +192,7 @@ export interface JournalEntry {
   lesson_learned?: string;
   tomorrow_mission?: string;
   created_at: string;
+  pointsEarned?: number;
   updated_at: string;
 }
 
@@ -388,7 +390,7 @@ export interface StatsResponse {
 }
 
 // ─── Support ───────────────────────────────────────────────────────────────
-export type SupportIssueType = 'bug' | 'feature_request' | 'payment' | 'account' | 'other';
+export type SupportIssueType = 'bug' | 'feature' | 'feedback' | 'account' | 'other';
 export type SupportStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
 export interface CreateSupportTicketDto {

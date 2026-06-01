@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, PanResponder, Image,
+  ScrollView, ActivityIndicator, PanResponder, Image, Modal,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { journalsApi, setupApi } from '../../api';
 import { colors, spacing, typography, radius } from '../../theme';
 import type { JournalEntry, CompanionDto } from '../../types';
 import { format, parseISO } from 'date-fns';
+import { playPopUpSound } from '../../utils/playSound';
 
 type JournalDetailRouteParams = { entry?: JournalEntry; isNewEntry?: boolean };
 type JournalDetailRouteProp = RouteProp<{ JournalDetail: JournalDetailRouteParams }, 'JournalDetail'>;
@@ -153,15 +155,29 @@ const JournalDetailScreen = () => {
   const [saving, setSaving] = useState(false);
   const [companion, setCompanion] = useState<CompanionDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pointsEarned, setPointsEarned] = useState<number | null>(null);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => setPointsEarned(null);
+    }, [])
+  );
   const [sliderWidth, setSliderWidth] = useState(0);
 
   // View/Edit mode states (for existing entries)
   const [editSection, setEditSection] = useState<EditSection>(null);
 
+  useEffect(() => {
+    if (editSection !== null) {
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
+    }
+  }, [editSection]);
+
   // New entry mode states (step-by-step)
   const [step, setStep] = useState<Step>('mood');
   const [completedSteps, setCompletedSteps] = useState<Set<Step>>(new Set());
 
+  const scrollViewRef = useRef<ScrollView>(null);
   const lastMoodRef = useRef(mood);
   const handleSliderXRef = useRef<(x: number) => void>(() => { });
   handleSliderXRef.current = (x: number) => {
@@ -237,15 +253,22 @@ const JournalDetailScreen = () => {
   const handleNewEntrySave = async () => {
     setSaving(true);
     try {
-      await journalsApi.upsert({
+      const { data } = await journalsApi.upsert({
         date: selectedDate,
         mood,
         win_of_the_day: win || undefined,
         lesson_learned: lesson || undefined,
         tomorrow_mission: mission || undefined,
       });
+      if (data.pointsEarned && data.pointsEarned > 0) {
+        setPointsEarned(data.pointsEarned);
+        playPopUpSound();
+      } else {
+        navigation.goBack();
+      }
+    } catch {
       navigation.goBack();
-    } catch { }
+    }
     setSaving(false);
   };
 
@@ -529,6 +552,32 @@ const JournalDetailScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {pointsEarned !== null && (
+        <Modal transparent animationType="fade" visible={pointsEarned !== null}>
+          <View style={styles.pointsOverlay}>
+            <View style={styles.pointsCard}>
+              <View style={[styles.pointsCompanionRing, { borderColor: getCompanionColor(companion?.name || '') + '99' }]}>
+                {companion?.image && (
+                  <Image source={{ uri: companion.image }} style={styles.pointsCompanionImg} resizeMode="cover" />
+                )}
+              </View>
+              <Text style={[styles.pointsBadge, { color: colors.success }]}>+{pointsEarned} pts</Text>
+              <Text style={styles.pointsTitle}>Points earned!</Text>
+              <Text style={styles.pointsSubtitle}>{[
+                (n: string) => `${n} is proud of you. Keep showing up.`,
+                (n: string) => `${n} is impressed. Keep the streak alive.`,
+                (n: string) => `${n} sees your dedication. Don't stop now.`,
+                (n: string) => `${n} nods in approval. You're building real momentum.`,
+                (n: string) => `${n} smiles. This is what greatness looks like.`,
+              ][0](companion?.name ?? 'Your companion')}</Text>
+              <TouchableOpacity style={styles.pointsContinueBtn} onPress={() => { setPointsEarned(null); navigation.goBack(); }} activeOpacity={0.85}>
+                <Text style={styles.pointsContinueBtnText}>Continue →</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* Header: Back left, Date text right */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBack}>
@@ -537,15 +586,22 @@ const JournalDetailScreen = () => {
         <Text style={styles.headerDateText}>{formatHeaderDate(selectedDate)}</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {isNewEntryMode ? renderNewEntryContent() : renderEditContent()}
-      </ScrollView>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView ref={scrollViewRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {isNewEntryMode ? renderNewEntryContent() : renderEditContent()}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   // Header with date text and edit button
@@ -681,6 +737,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   nextBtnText: { color: colors.background, fontSize: 15, fontWeight: '700' },
+
+  // Points popup
+  pointsOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
+  },
+  pointsCard: {
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    padding: spacing.xl, alignItems: 'center', width: '100%', gap: spacing.sm,
+  },
+  pointsCompanionRing: {
+    width: 72, height: 72, borderRadius: 36, borderWidth: 2,
+    overflow: 'hidden', marginBottom: spacing.sm,
+  },
+  pointsCompanionImg: { width: '100%', height: '100%' },
+  pointsBadge: { fontSize: 32, fontWeight: '800' },
+  pointsTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
+  pointsSubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  pointsContinueBtn: {
+    marginTop: spacing.md, backgroundColor: colors.text,
+    borderRadius: radius.md, paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xl, alignItems: 'center',
+  },
+  pointsContinueBtnText: { color: colors.background, fontSize: 15, fontWeight: '700' },
 });
 
 export default JournalDetailScreen;

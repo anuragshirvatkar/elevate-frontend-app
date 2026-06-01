@@ -19,6 +19,7 @@ import BicepIcon from '../../../assets/bicep.svg';
 import BrainIcon from '../../../assets/brain.svg';
 import CraftIcon from '../../../assets/craft.svg';
 import PurityIcon from '../../../assets/purity.svg';
+import { playPopUpSound } from '../../utils/playSound';
 
 const getCompanionColor = (name: string): string => {
   const colorMap: Record<string, string> = {
@@ -51,19 +52,21 @@ interface SectionActivity {
   userBookId?: string;
 }
 
-type ActivityEntry = { didUserDo: boolean; hours: string; description: string; images: string[] };
+type ActivityEntry = { didUserDo: boolean; hours: string; description: string; images: string[]; reasonIfNo?: string };
 
 interface LogState {
   power: Record<string, ActivityEntry>;
   craft: Record<string, ActivityEntry>;
-  purity: { relapseCount: string; description: string };
-  mind: Record<string, { didUserDo: boolean; description: string; images: string[] }>;
+  purity: { relapseCount: string; reasonIfNo: string };
+  mind: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }>;
 }
 
-// per-activity phase after "Yes"
-type ActivityPhase = 'hours' | 'notes' | 'images';
+// per-activity phase after "Yes" or "No"
+type ActivityPhase = 'hours' | 'notes' | 'images' | 'reason';
 
 const STEP_ORDER: Step[] = ['power', 'craft', 'purity', 'mind', 'done'];
+
+const NO_REASON_OPTIONS = ['Tired', 'No time', 'Forgot', 'No motivation', 'Sick', 'Other'];
 
 
 const HOURS_OPTIONS = [
@@ -97,7 +100,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [logState, setLogState] = useState<LogState>({
     power: {},
     craft: {},
-    purity: { relapseCount: '0', description: '' },
+    purity: { relapseCount: '0', reasonIfNo: '' },
     mind: {},
   });
   const [loading, setLoading] = useState(false);
@@ -177,6 +180,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             hours: hoursValueToLabel(log.hours),
             description: log.description ?? '',
             images: log.images ?? [],
+            reasonIfNo: log.reasonIfNo ?? undefined,
           };
         } else if (log.section === 'craft' && log.activityId) {
           newCraft[log.activityId] = {
@@ -184,18 +188,20 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             hours: hoursValueToLabel(log.hours),
             description: log.description ?? '',
             images: log.images ?? [],
+            reasonIfNo: log.reasonIfNo ?? undefined,
           };
         } else if (log.section === 'purity') {
           hasPurityLog = true;
           newPurity = {
             relapseCount: String(log.relapseCount ?? 0),
-            description: log.description ?? '',
+            reasonIfNo: log.reasonIfNo ?? '',
           };
         } else if (log.section === 'mind' && log.userBookId) {
           newMind[log.userBookId] = {
             didUserDo: log.didUserDo ?? false,
             description: log.description ?? '',
             images: log.images ?? [],
+            reasonIfNo: log.reasonIfNo ?? undefined,
           };
         }
       }
@@ -328,6 +334,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       const msgIdx = pickFrom[Math.floor(Math.random() * pickFrom.length)];
       usedMsgIndices.current.push(msgIdx);
       setPointsPopup({ points, nextStep, msgIdx });
+      if (points > 0) playPopUpSound();
     } else if (nextStep === 'done') {
       onComplete();
     } else {
@@ -348,6 +355,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             : undefined,
           description: data.description || undefined,
           images: data.images?.length ? data.images : undefined,
+          reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
         const pts = (res.data as { points?: number }).points;
@@ -369,6 +377,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             : undefined,
           description: data.description || undefined,
           images: data.images?.length ? data.images : undefined,
+          reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
         const pts = (res.data as { points?: number }).points;
@@ -383,7 +392,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       const res = await activitiesApi.logActivity({
         section: 'purity',
         relapseCount: parseInt(logState.purity.relapseCount || '0', 10),
-        description: logState.purity.description || undefined,
+        reasonIfNo: logState.purity.reasonIfNo || undefined,
         date: dateStr,
       });
       return (res.data as { points?: number }).points ?? 0;
@@ -402,6 +411,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           didUserDo: data.didUserDo,
           description: data.description || undefined,
           images: data.images?.length ? data.images : undefined,
+          reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
         const pts = (res.data as { points?: number }).points;
@@ -409,6 +419,14 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       } catch {}
     }
     return totalPoints;
+  };
+
+  const isSectionPositive = (sec: string): boolean => {
+    if (sec === 'power') { const e = Object.values(logState.power); return e.length === 0 || e.some(v => v.didUserDo); }
+    if (sec === 'craft') { const e = Object.values(logState.craft); return e.length === 0 || e.some(v => v.didUserDo); }
+    if (sec === 'mind') { const e = Object.values(logState.mind); return e.length === 0 || e.some(v => v.didUserDo); }
+    if (sec === 'purity') return parseInt(logState.purity.relapseCount || '0', 10) === 0;
+    return true;
   };
 
   return (
@@ -454,8 +472,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                       color={active ? '#FFFFFF' : completed ? '#666' : '#383838'}
                     />
                     {completed && (
-                      <View style={styles.completedTick}>
-                        <Ionicons name="checkmark" size={5} color="white" />
+                      <View style={[styles.completedTick, !isSectionPositive(section) && { backgroundColor: colors.error }]}>
+                        <Ionicons name={isSectionPositive(section) ? 'checkmark' : 'close'} size={5} color="white" />
                       </View>
                     )}
                   </TouchableOpacity>
@@ -580,7 +598,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   setLogState({
                     power: {},
                     craft: {},
-                    purity: { relapseCount: '0', description: '' },
+                    purity: { relapseCount: '0', reasonIfNo: '' },
                     mind: {},
                     });
                   setStep('power');
@@ -795,6 +813,10 @@ const ActivityLogStep: React.FC<{
   const [customName, setCustomName] = useState('');
   const [addingCustom, setAddingCustom] = useState(false);
   const [showCustomInput, setShowCustomInput] = useState(false);
+  // Reason state (for No answer)
+  const [selectedReason, setSelectedReason] = useState('');
+  const [showCustomReason, setShowCustomReason] = useState(false);
+  const [customReasonText, setCustomReasonText] = useState('');
 
   // Current activity shown in yes/no question — defaults to primary (or first)
   const getDefaultActivity = (acts: SectionActivity[], excludeIds: string[]): SectionActivity | null => {
@@ -821,6 +843,9 @@ const ActivityLogStep: React.FC<{
     setCustomName('');
     setShowCustomInput(false);
     setConfirmedIds([]);
+    setSelectedReason('');
+    setShowCustomReason(false);
+    setCustomReasonText('');
     const def = getDefaultActivity(activities, []);
     setCurrentId(def?.activityId ?? null);
   }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -870,10 +895,10 @@ const ActivityLogStep: React.FC<{
     if (didDo) {
       setActivePhase({ id: currentActivity.activityId, phase: 'hours' });
     } else {
-      // answered No — fully done
-      setConfirmedIds((prev) => [...prev, currentActivity.activityId]);
-      setDonePhases([]);
-      setCurrentId(null);
+      setActivePhase({ id: currentActivity.activityId, phase: 'reason' });
+      setSelectedReason('');
+      setShowCustomReason(false);
+      setCustomReasonText('');
     }
     setShowDropdown(false);
   };
@@ -882,6 +907,34 @@ const ActivityLogStep: React.FC<{
     if (!activePhase) return;
     setDonePhases((prev) => [...prev, 'hours']);
     setActivePhase({ id: activePhase.id, phase: 'notes' });
+  };
+
+  const confirmNoActivity = (id: string) => {
+    setConfirmedIds((prev) => [...prev, id]);
+    setDonePhases([]);
+    setActivePhase(null);
+    setCurrentId(null);
+    setSelectedReason('');
+    setShowCustomReason(false);
+    setCustomReasonText('');
+  };
+
+  const handleReasonSelect = (reason: string) => {
+    if (!activePhase) return;
+    setSelectedReason(reason);
+    if (reason !== 'Other') {
+      onUpdate(activePhase.id, 'reasonIfNo', reason);
+      confirmNoActivity(activePhase.id);
+    } else {
+      setShowCustomReason(true);
+      setCustomReasonText('');
+    }
+  };
+
+  const handleCustomReasonConfirm = () => {
+    if (!customReasonText.trim() || !activePhase) return;
+    onUpdate(activePhase.id, 'reasonIfNo', customReasonText.trim());
+    confirmNoActivity(activePhase.id);
   };
 
   const handleNotesDone = () => {
@@ -897,7 +950,7 @@ const ActivityLogStep: React.FC<{
     setCurrentId(null);
   };
 
-  const handleEdit = (id: string, phase: 'yesno' | 'hours' | 'notes' | 'images' = 'yesno') => {
+  const handleEdit = (id: string, phase: 'yesno' | 'hours' | 'notes' | 'images' | 'reason' = 'yesno') => {
     setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
     setDonePhases([]);
     if (phase === 'yesno') {
@@ -911,6 +964,13 @@ const ActivityLogStep: React.FC<{
     } else if (phase === 'notes') {
       setDonePhases(['yesno', 'hours']);
       setActivePhase({ id, phase: 'notes' });
+    } else if (phase === 'reason') {
+      onUpdate(id, 'reasonIfNo', '');
+      setDonePhases(['yesno']);
+      setActivePhase({ id, phase: 'reason' });
+      setSelectedReason('');
+      setShowCustomReason(false);
+      setCustomReasonText('');
     } else {
       setDonePhases(['yesno', 'hours', 'notes']);
       setActivePhase({ id, phase: 'images' });
@@ -948,6 +1008,12 @@ const ActivityLogStep: React.FC<{
                 <TweetSummary companion={companion} name={act.name}
                   subtitle="Session photos"
                   status={`${s!.images.length} photo${s!.images.length > 1 ? 's' : ''}`} editable />
+              </TouchableOpacity>
+            )}
+            {!s?.didUserDo && !!s?.reasonIfNo && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'reason')}>
+                <TweetSummary companion={companion} name={act.name}
+                  subtitle="Why not?" status={s.reasonIfNo!} editable />
               </TouchableOpacity>
             )}
           </React.Fragment>
@@ -1043,6 +1109,45 @@ const ActivityLogStep: React.FC<{
                   onImagesChange={(imgs) => onUpdateImages(activePhase.id, imgs)}
                   onConfirm={() => confirmActivity(activePhase.id)}
                 />
+              </CompanionBubble>
+            )}
+            {activePhase.phase === 'reason' && (
+              <CompanionBubble companion={companion}>
+                <View style={styles.questionRow}>
+                  <Text style={styles.questionText}>Why didn't you </Text>
+                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionText}>?</Text>
+                </View>
+                <View style={styles.relapseCauses}>
+                  {NO_REASON_OPTIONS.map((reason) => (
+                    <TouchableOpacity
+                      key={reason}
+                      style={[styles.relapseCauseChip, selectedReason === reason && styles.relapseCauseChipActive]}
+                      onPress={() => handleReasonSelect(reason)}
+                    >
+                      <Text style={[styles.relapseCauseText, selectedReason === reason && styles.relapseCauseTextActive]}>
+                        {reason}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {showCustomReason && (
+                  <View style={styles.hoursWrap}>
+                    <View style={styles.inputWithTick}>
+                      <TextInput
+                        style={[styles.hoursInput, styles.hoursInputPad]}
+                        placeholder="Type your reason..."
+                        placeholderTextColor={colors.textMuted}
+                        value={customReasonText}
+                        onChangeText={setCustomReasonText}
+                        autoFocus
+                      />
+                      <TouchableOpacity style={styles.inputTickBtn} onPress={handleCustomReasonConfirm}>
+                        <Ionicons name="checkmark" size={22} color={customReasonText.trim() ? colors.success : colors.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
               </CompanionBubble>
             )}
           </React.Fragment>
@@ -1313,7 +1418,7 @@ const HelpCarousel: React.FC<{ visible: boolean; onClose: () => void }> = ({ vis
 };
 
 const PurityStep: React.FC<{
-  state: { relapseCount: string; description: string };
+  state: { relapseCount: string; reasonIfNo: string };
   onUpdate: (field: string, val: string) => void;
   companion: CompanionDto | null;
   onCompleteChange?: (complete: boolean) => void;
@@ -1330,7 +1435,7 @@ const PurityStep: React.FC<{
     return parseInt(state.relapseCount || '0', 10) === 0 ? 'clean' : 'relapsed';
   });
   const [selectedCause, setSelectedCause] = useState(() =>
-    initialConfirmed && state.description ? state.description : ''
+    initialConfirmed && state.reasonIfNo ? state.reasonIfNo : ''
   );
   const [confirmed, setConfirmed] = useState(initialConfirmed ?? false);
 
@@ -1344,7 +1449,7 @@ const PurityStep: React.FC<{
 
   const handleClean = () => {
     onUpdate('relapseCount', '0');
-    onUpdate('description', '');
+    onUpdate('reasonIfNo', '');
     setMode('clean');
     setConfirmed(true);
     onCompleteChange?.(true);
@@ -1352,7 +1457,7 @@ const PurityStep: React.FC<{
 
   const handleRelapsed = () => {
     onUpdate('relapseCount', '0');
-    onUpdate('description', '');
+    onUpdate('reasonIfNo', '');
     setSelectedCause('');
     setMode('relapsed');
   };
@@ -1360,16 +1465,16 @@ const PurityStep: React.FC<{
   const handleCauseSelect = (cause: string) => {
     setSelectedCause(cause);
     if (cause !== 'Other') {
-      onUpdate('description', cause);
+      onUpdate('reasonIfNo', cause);
       setConfirmed(true);
       onCompleteChange?.(true);
     } else {
-      onUpdate('description', '');
+      onUpdate('reasonIfNo', '');
     }
   };
 
   const handleOtherConfirm = () => {
-    if (!state.description.trim()) return;
+    if (!state.reasonIfNo.trim()) return;
     setConfirmed(true);
     onCompleteChange?.(true);
   };
@@ -1379,13 +1484,13 @@ const PurityStep: React.FC<{
     setSelectedCause('');
     setMode('question');
     onUpdate('relapseCount', '0');
-    onUpdate('description', '');
+    onUpdate('reasonIfNo', '');
     onCompleteChange?.(false);
   };
 
   const tweetStatus = mode === 'clean'
     ? 'Clean ✓'
-    : `Relapsed × ${count}${state.description ? ` · ${state.description}` : ''}`;
+    : `Relapsed × ${count}${state.reasonIfNo ? ` · ${state.reasonIfNo}` : ''}`;
 
   return (
     <View style={styles.stepContent}>
@@ -1476,8 +1581,8 @@ const PurityStep: React.FC<{
                         style={[styles.hoursInput, styles.hoursInputPad]}
                         placeholder="What caused it?"
                         placeholderTextColor={colors.textMuted}
-                        value={state.description}
-                        onChangeText={(v) => onUpdate('description', v)}
+                        value={state.reasonIfNo}
+                        onChangeText={(v) => onUpdate('reasonIfNo', v)}
                         autoFocus
                       />
                       <TouchableOpacity
@@ -1487,7 +1592,7 @@ const PurityStep: React.FC<{
                         <Ionicons
                           name="checkmark"
                           size={22}
-                          color={state.description.trim() ? colors.success : colors.textMuted}
+                          color={state.reasonIfNo.trim() ? colors.success : colors.textMuted}
                         />
                       </TouchableOpacity>
                     </View>
@@ -1511,26 +1616,38 @@ const MindStep: React.FC<{
   companion: CompanionDto | null;
   onAddBooks?: () => void;
 }> = ({ books, logState, onUpdate, onUpdateImages, companion, onAddBooks }) => {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [confirmedIds, setConfirmedIds] = useState<string[]>(() =>
-    books.filter((b) => b.userBookId in logState).map((b) => b.userBookId)
+  const alreadyLoggedIds = books.filter((b) => b.userBookId in logState).map((b) => b.userBookId);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    books.find((b) => !(b.userBookId in logState))?.userBookId ?? null
   );
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [confirmedIds, setConfirmedIds] = useState<string[]>(alreadyLoggedIds);
   const [notesBookId, setNotesBookId] = useState<string | null>(null);
   const [imagesBookId, setImagesBookId] = useState<string | null>(null);
+  const [reasonBookId, setReasonBookId] = useState<string | null>(null);
+  const [selectedMindReason, setSelectedMindReason] = useState('');
+  const [showCustomMindReason, setShowCustomMindReason] = useState(false);
+  const [customMindReasonText, setCustomMindReasonText] = useState('');
 
   const activeId = notesBookId ?? imagesBookId;
   const tweetIds = activeId ? [...confirmedIds, activeId] : confirmedIds;
-  const unanswered = books.filter((b) => !tweetIds.includes(b.userBookId));
-  const currentForYesNo = activeId ? null : (books.find((b) => b.userBookId === selectedId) || unanswered[0]);
+  const unanswered = books.filter((b) => !tweetIds.includes(b.userBookId) && b.userBookId !== reasonBookId);
+  // Only show yes/no for explicitly selected book — never auto-advance to the next one
+  const currentForYesNo = (activeId || reasonBookId) ? null : books.find((b) => b.userBookId === selectedId) ?? null;
   const notesBook = notesBookId ? books.find((b) => b.userBookId === notesBookId) : null;
   const imagesBook = imagesBookId ? books.find((b) => b.userBookId === imagesBookId) : null;
 
   const handleYesNo = (didDo: boolean) => {
     if (!currentForYesNo) return;
     onUpdate(currentForYesNo.userBookId, 'didUserDo', didDo);
-    if (didDo) setNotesBookId(currentForYesNo.userBookId);
-    else setConfirmedIds((prev) => [...prev, currentForYesNo.userBookId]);
+    if (didDo) {
+      setNotesBookId(currentForYesNo.userBookId);
+    } else {
+      setReasonBookId(currentForYesNo.userBookId);
+      setSelectedMindReason('');
+      setShowCustomMindReason(false);
+      setCustomMindReasonText('');
+    }
     setSelectedId(null);
     setShowDropdown(false);
   };
@@ -1546,17 +1663,44 @@ const MindStep: React.FC<{
     setNotesBookId(null);
   };
 
+  const handleMindReasonSelect = (reason: string) => {
+    if (!reasonBookId) return;
+    setSelectedMindReason(reason);
+    if (reason !== 'Other') {
+      onUpdate(reasonBookId, 'reasonIfNo', reason);
+      setConfirmedIds((prev) => [...prev, reasonBookId!]);
+      setReasonBookId(null);
+      setSelectedMindReason('');
+    } else {
+      setShowCustomMindReason(true);
+      setCustomMindReasonText('');
+    }
+  };
+
+  const handleCustomMindReasonConfirm = () => {
+    if (!customMindReasonText.trim() || !reasonBookId) return;
+    onUpdate(reasonBookId, 'reasonIfNo', customMindReasonText.trim());
+    setConfirmedIds((prev) => [...prev, reasonBookId!]);
+    setReasonBookId(null);
+    setSelectedMindReason('');
+    setShowCustomMindReason(false);
+    setCustomMindReasonText('');
+  };
+
   const confirmBook = (id: string) => {
     setConfirmedIds((prev) => [...prev, id]);
     setImagesBookId(null);
+    setSelectedId(null);
   };
 
   const handleEdit = (id: string) => {
     onUpdate(id, 'didUserDo', false);
     onUpdate(id, 'description', '');
     onUpdateImages(id, []);
+    onUpdate(id, 'reasonIfNo', '');
     if (notesBookId === id) setNotesBookId(null);
     if (imagesBookId === id) setImagesBookId(null);
+    if (reasonBookId === id) { setReasonBookId(null); setSelectedMindReason(''); setShowCustomMindReason(false); setCustomMindReasonText(''); }
     setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
     setSelectedId(id);
   };
@@ -1576,7 +1720,7 @@ const MindStep: React.FC<{
         const book = books.find((b) => b.userBookId === id);
         if (!book) return null;
         const s = logState[id];
-        const status = s?.didUserDo ? 'Read ✓' : 'Skipped';
+        const status = s?.didUserDo ? 'Read ✓' : `Skipped${s?.reasonIfNo ? ` · ${s.reasonIfNo}` : ''}`;
         return (
           <TouchableOpacity key={id} activeOpacity={0.7} onPress={() => handleEdit(id)}>
             <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} editable />
@@ -1628,6 +1772,51 @@ const MindStep: React.FC<{
         </CompanionBubble>
       )}
 
+      {/* Reason for not reading */}
+      {reasonBookId && (() => {
+        const reasonBook = books.find((b) => b.userBookId === reasonBookId);
+        if (!reasonBook) return null;
+        return (
+          <CompanionBubble companion={companion}>
+            <View style={styles.questionRow}>
+              <Text style={styles.questionText}>Why didn't you read </Text>
+              <Text style={styles.questionHighlight}>{reasonBook.title}</Text>
+              <Text style={styles.questionText}>?</Text>
+            </View>
+            <View style={styles.relapseCauses}>
+              {NO_REASON_OPTIONS.map((reason) => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[styles.relapseCauseChip, selectedMindReason === reason && styles.relapseCauseChipActive]}
+                  onPress={() => handleMindReasonSelect(reason)}
+                >
+                  <Text style={[styles.relapseCauseText, selectedMindReason === reason && styles.relapseCauseTextActive]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {showCustomMindReason && (
+              <View style={styles.hoursWrap}>
+                <View style={styles.inputWithTick}>
+                  <TextInput
+                    style={[styles.hoursInput, styles.hoursInputPad]}
+                    placeholder="Type your reason..."
+                    placeholderTextColor={colors.textMuted}
+                    value={customMindReasonText}
+                    onChangeText={setCustomMindReasonText}
+                    autoFocus
+                  />
+                  <TouchableOpacity style={styles.inputTickBtn} onPress={handleCustomMindReasonConfirm}>
+                    <Ionicons name="checkmark" size={22} color={customMindReasonText.trim() ? colors.success : colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </CompanionBubble>
+        );
+      })()}
+
       {/* Yes / No question */}
       {currentForYesNo && (
         <>
@@ -1643,21 +1832,20 @@ const MindStep: React.FC<{
         <CompanionBubble companion={companion}>
           <View style={styles.questionRow}>
             <Text style={styles.questionText}>Did you read </Text>
-            {books.length > 2 ? (
-              <TouchableOpacity activeOpacity={0.7} onPress={() => setShowDropdown((s) => !s)} style={styles.activityDropdownBtn}>
-                <Text style={styles.activityDropdownText}>
-                  {currentForYesNo.title} <Ionicons name="chevron-down" size={14} color={colors.text} />
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.questionHighlight}>{currentForYesNo.title}</Text>
-            )}
+            <TouchableOpacity
+              style={[styles.actDropdownTrigger, showDropdown && styles.actDropdownTriggerOpen]}
+              onPress={unanswered.length > 1 ? () => setShowDropdown((s) => !s) : undefined}
+              activeOpacity={unanswered.length > 1 ? 0.8 : 1}
+            >
+              <Text style={styles.actDropdownTriggerText}>{currentForYesNo.title}</Text>
+              {unanswered.length > 1 && <Ionicons name={showDropdown ? 'chevron-up' : 'chevron-down'} size={13} color={colors.text} />}
+            </TouchableOpacity>
             <Text style={styles.questionText}>?</Text>
           </View>
 
           {currentForYesNo.author && <Text style={styles.bookAuthor}>{currentForYesNo.author}</Text>}
 
-          {showDropdown && books.length > 2 && (
+          {showDropdown && unanswered.length > 1 && (
             <View style={styles.dropdown}>
               {unanswered.map((book) => (
                 <TouchableOpacity key={book.userBookId} style={styles.dropdownItem} onPress={() => { setSelectedId(book.userBookId); setShowDropdown(false); }}>
@@ -2017,6 +2205,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginTop: spacing.xs,
+    justifyContent: 'center',
   },
   relapseCauseChip: {
     paddingHorizontal: spacing.md,

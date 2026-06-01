@@ -55,24 +55,36 @@ const CompanionSelectScreen: React.FC<
   useEffect(() => {
     const loadData = async () => {
       try {
+        const [{ data: options }, { data: progress }] = await Promise.all([
+          setupApi.getOptions(),
+          setupApi.getProgress(),
+        ]);
+
+        setCompanions(options.companions);
+
+        // Always load the previously selected companion if it exists
+        if (progress.selectedCompanion) {
+          setSelected(progress.selectedCompanion.id);
+          // Find the index of the selected companion to scroll to it
+          const selectedIndex = options.companions.findIndex(
+            (c) => c.id === progress.selectedCompanion.id
+          );
+          if (selectedIndex !== -1) {
+            setCurrentIndex(selectedIndex);
+            setTimeout(() => {
+              scrollRef.current?.scrollTo({ x: selectedIndex * screenWidth, animated: false });
+            }, 100);
+          }
+        } else if (options.companions.length > 0) {
+          setSelected(options.companions[0].id);
+        }
+
         // Skip auto-routing when user intentionally navigated back
         if (route.params?.skipRouting) {
-          const [{ data: options }, { data: progress }] = await Promise.all([
-            setupApi.getOptions(),
-            setupApi.getProgress(),
-          ]);
-          setCompanions(options.companions);
-          if (progress.selectedCompanion) {
-            setSelected(progress.selectedCompanion.id);
-          } else if (options.companions.length > 0) {
-            setSelected(options.companions[0].id);
-          }
           setLoading(false);
           return;
         }
 
-        // Check existing progress first
-        const { data: progress } = await setupApi.getProgress();
         console.log('Existing progress:', progress);
 
         // Route to the first incomplete onboarding step
@@ -115,12 +127,6 @@ const CompanionSelectScreen: React.FC<
           return;
         }
 
-        // Load companions for selection
-        const { data: options } = await setupApi.getOptions();
-        setCompanions(options.companions);
-        if (options.companions.length > 0) {
-          setSelected(options.companions[0].id);
-        }
         setLoading(false);
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -129,7 +135,7 @@ const CompanionSelectScreen: React.FC<
     };
 
     loadData();
-  }, [navigation]);
+  }, [navigation, route.params?.skipRouting, screenWidth]);
 
   const handleScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
@@ -352,14 +358,14 @@ const styles = StyleSheet.create({
   title: {
     ...typography.h1,
     color: '#fff',
-    marginTop: 20,
+    marginTop: 10,
     lineHeight: 35,
   },
   subtitle: {
     ...typography.body,
     color: '#888',
-    marginTop: 8,
-    marginBottom: 30,
+    marginTop: 6,
+    marginBottom: 16,
   },
   carousel: {
     flex: 1,
@@ -371,6 +377,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 20,
+    paddingBottom: 32,
   },
   cardWrapper: {
     alignItems: 'center',

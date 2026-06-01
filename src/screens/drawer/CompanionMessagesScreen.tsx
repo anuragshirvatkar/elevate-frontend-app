@@ -131,6 +131,17 @@ const CompanionMessagesScreen = () => {
 
             {/* Message body */}
             <Text style={styles.rowBody}>{item.message}</Text>
+
+            {item.type === 'ACHIEVEMENT' && (
+              <TouchableOpacity
+                style={styles.showBtn}
+                onPress={() => (navigation as any).navigate('Achievements')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.showBtnText}>Show</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.background} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -259,6 +270,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 20,
     fontStyle: 'italic',
+  },
+  showBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: spacing.sm,
+  },
+  showBtnText: {
+    color: colors.background,
+    fontWeight: '700',
+    fontSize: 12,
   },
 });
 

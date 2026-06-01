@@ -428,7 +428,7 @@ const s = StyleSheet.create({
   // Overview tiles
   tilesRow: { flexDirection: 'row', gap: 10 },
   tile: {
-    flex: 1, backgroundColor: '#111', borderRadius: 16, borderWidth: 1,
+    flex: 1, backgroundColor: '#000', borderRadius: 16, borderWidth: 1,
     borderColor: '#222', paddingVertical: 16, paddingHorizontal: 12,
     alignItems: 'center', gap: 6,
   },
@@ -437,7 +437,7 @@ const s = StyleSheet.create({
 
   // Consistency card
   consistencyCard: {
-    backgroundColor: '#111', borderRadius: 16, borderWidth: 1, borderColor: '#1e1e1e', padding: 16,
+    backgroundColor: '#000', borderRadius: 16, borderWidth: 1, borderColor: '#1e1e1e', padding: 16,
   },
   consistencyTop: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 14 },
   ringWrap: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center' },
@@ -462,7 +462,7 @@ const s = StyleSheet.create({
 
   // Section card
   card: {
-    backgroundColor: '#111', borderRadius: 16, borderWidth: 1, borderColor: '#1e1e1e', padding: 16,
+    backgroundColor: '#000', borderRadius: 16, borderWidth: 1, borderColor: '#1e1e1e', padding: 16,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
@@ -532,7 +532,7 @@ const s = StyleSheet.create({
 
   // Insight
   insightCard: {
-    backgroundColor: '#0d0d0d', borderRadius: 14, borderWidth: 1,
+    backgroundColor: '#000', borderRadius: 14, borderWidth: 1,
     borderColor: '#1a1a1a', padding: 14,
   },
   insightText: { fontSize: 12, color: '#555', lineHeight: 18 },

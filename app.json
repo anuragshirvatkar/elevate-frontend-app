@@ -16,6 +16,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.nexgen.elevate",
+      "targetSdkVersion": 35,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
@@ -32,10 +33,18 @@
           "cameraPermission": "Allow Elevate to use your camera."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "targetSdkVersion": 35,
+            "compileSdkVersion": 35
+          }
+        }
+      ]
     ],
     "extra": {
-      "API_BASE_URL": "https://api.elevateyourlife.app",
       "eas": {
         "projectId": "bb1958d6-83d6-427d-9313-243fc78d9b1d"
       }

@@ -105,4 +105,23 @@ apiClient.interceptors.response.use(
   }
 );
 
+/**
+ * A lightweight client for fire-and-forget background calls (analytics, push registration, etc.).
+ * Attaches the Bearer token but has NO auth-expiry interceptor, so a 401 here never triggers
+ * "Session Expired" alerts or resets auth state.
+ */
+export const silentApiClient = axios.create({
+  baseURL: BASE_URL,
+  timeout: 10000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+silentApiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const token = await AsyncStorage.getItem('accessToken');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export default apiClient;

@@ -13,4 +13,4 @@ export { statsApi } from './stats';
 export { supportApi } from './support';
 export { uploadsApi } from './uploads';
 export { helpApi } from './help';
-export { default as apiClient } from './client';
+export { default as apiClient, silentApiClient } from './client';

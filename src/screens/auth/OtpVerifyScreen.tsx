@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   otpBoxFilled: { borderColor: 'rgba(255, 255, 255, 0.8)' },
   otpBoxActive: { borderColor: 'rgba(255, 255, 255, 0.5)' },
   otpChar: { ...typography.h3, color: '#ffffff' },
-  hiddenInput: { position: 'absolute', opacity: 0, width: 1, height: 1, zIndex: -1 },
+  hiddenInput: { position: 'absolute', opacity: 0, width: 1, height: 1 },
   verifyBtn: { marginBottom: spacing.sm },
   resendRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs },
   resendLabel: { fontSize: 14, color: 'rgba(255, 255, 255, 0.5)' },

@@ -9,10 +9,10 @@ import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { OnboardingStackScreenProps } from '../../navigation/types';
 import { setupApi, activitiesApi } from '../../api';
+import type { ActivityDto, CompanionDto } from '../../types';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
 import { useAlert } from '../../context/AlertContext';
-import type { ActivityDto, CompanionDto } from '../../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CraftIcon from '../../../assets/craft.svg';
 
@@ -82,6 +82,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
   const [customName, setCustomName] = useState('');
   const [customCreating, setCustomCreating] = useState(false);
   const [craftIntroVisible, setCraftIntroVisible] = useState(false);
+  const [customActivityIds, setCustomActivityIds] = useState<Set<string>>(new Set());
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -94,10 +95,11 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
       try {
         setScreenLoading(true);
 
-        const [{ data: optionsData }, { data: progressData }] =
+        const [{ data: optionsData }, { data: progressData }, { data: customActivitiesData }] =
           await Promise.all([
             setupApi.getOptions(),
             setupApi.getProgress(),
+            activitiesApi.getCustom(),
           ]);
 
         setActivities(optionsData.activities.craft);
@@ -105,6 +107,22 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
         setCompanion(progressData.selectedCompanion || null);
 
         const craft = progressData.sections?.craft;
+
+        // Filter custom activities for this section
+        const sectionCustomActivities = customActivitiesData.filter((a: any) => a.section === 'craft');
+        
+        if (sectionCustomActivities.length > 0) {
+          const customIds = sectionCustomActivities.map((a: any) => a.id);
+          setCustomActivityIds(new Set(customIds));
+          
+          // Add custom activities to the activities array with correct structure
+          const mappedCustomActivities: ActivityDto[] = sectionCustomActivities.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            section: 'craft' as const,
+          }));
+          setActivities((prev) => [...prev, ...mappedCustomActivities]);
+        }
 
         if (craft?.activities?.length) {
           setSelectedActivities(
@@ -212,8 +230,15 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
     const bIndex = COMMON_ORDER.findIndex(x => bName.includes(x));
     return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
   });
-  const displayedActivities = sortedActivities.slice(0, 5);
-  const hiddenActivities = sortedActivities.slice(5);
+
+  const customActivities = sortedActivities.filter(act => customActivityIds.has(act.id));
+  const nonCustomActivities = sortedActivities.filter(act => !customActivityIds.has(act.id));
+  
+  // Calculate how many predefined items to show (5 - custom count)
+  const customCount = customActivities.length;
+  const predefinedCountToShow = Math.max(0, 5 - customCount);
+  const displayedActivities = nonCustomActivities.slice(0, predefinedCountToShow);
+  const hiddenActivities = nonCustomActivities.slice(predefinedCountToShow);
 
   const toggleActivity = (id: string) => {
     if (selectedActivities.includes(id)) {
@@ -232,6 +257,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
     try {
       const { data } = await activitiesApi.createCustom(name, 'craft');
       setActivities((prev) => [...prev, data]);
+      setCustomActivityIds((prev) => new Set(prev).add(data.id));
       setSelectedActivities((prev) => {
         if (prev.length >= 3) return prev;
         return [...prev, data.id];
@@ -411,6 +437,18 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
               </View>
 
               <View style={styles.grid}>
+                {customActivities.map((act) => {
+                  const isSelected = selectedActivities.includes(act.id);
+                  return (
+                    <TouchableOpacity key={act.id} style={styles.activityCard} onPress={() => toggleActivity(act.id)} activeOpacity={0.7}>
+                      <View style={[styles.activityInner, isSelected && styles.activityCardSelected]}>
+                        <Text style={[styles.activityText, isSelected && styles.activityTextSelected]} numberOfLines={1}>{getDisplayName(act.name)}</Text>
+                        {isSelected && <Text style={styles.tick}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+
                 {displayedActivities.map((act) => {
                   const isSelected = selectedActivities.includes(act.id);
                   return (
@@ -520,43 +558,49 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
 
           {step === 2 && (
             <View style={styles.contentSection}>
-              {/* Activity Summary */}
-              <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
-                <View style={styles.tweetRow}>
-                  <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
-                    {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
-                    )}
-                  </View>
-                  <View style={styles.tweetBody}>
-                    <View style={styles.tweetHeader}>
-                      <Text style={styles.tweetName}>Craft activities</Text>
-                      <Text style={styles.tweetMeta}>· selected</Text>
+              {/* Activity Summary - Editable */}
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(0)}>
+                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
+                  <View style={styles.tweetRow}>
+                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
+                      {companion?.image && (
+                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                      )}
                     </View>
-                    <Text style={styles.tweetText}>
-                      {selectedActivities.map(id => { const a = activities.find(x => x.id === id); return a ? getDisplayName(a.name) : ''; }).filter(Boolean).join(', ')}
-                    </Text>
+                    <View style={styles.tweetBody}>
+                      <View style={styles.tweetHeader}>
+                        <Text style={styles.tweetName}>Craft activities</Text>
+                        <Text style={styles.tweetMeta}>· selected</Text>
+                        <Text style={styles.tweetEdit}>✎</Text>
+                      </View>
+                      <Text style={styles.tweetText}>
+                        {selectedActivities.map(id => { const a = activities.find(x => x.id === id); return a ? getDisplayName(a.name) : ''; }).filter(Boolean).join(', ')}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              </Animated.View>
+                </Animated.View>
+              </TouchableOpacity>
 
-              {/* Rest Day Summary */}
-              <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
-                <View style={styles.tweetRow}>
-                  <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
-                    {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
-                    )}
-                  </View>
-                  <View style={styles.tweetBody}>
-                    <View style={styles.tweetHeader}>
-                      <Text style={styles.tweetName}>Rest days</Text>
-                      <Text style={styles.tweetMeta}>· selected</Text>
+              {/* Rest Day Summary - Editable */}
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(1)}>
+                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
+                  <View style={styles.tweetRow}>
+                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
+                      {companion?.image && (
+                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                      )}
                     </View>
-                    <Text style={styles.tweetText}>{restDays.join(', ') || 'None'}</Text>
+                    <View style={styles.tweetBody}>
+                      <View style={styles.tweetHeader}>
+                        <Text style={styles.tweetName}>Rest days</Text>
+                        <Text style={styles.tweetMeta}>· selected</Text>
+                        <Text style={styles.tweetEdit}>✎</Text>
+                      </View>
+                      <Text style={styles.tweetText}>{restDays.join(', ') || 'None'}</Text>
+                    </View>
                   </View>
-                </View>
-              </Animated.View>
+                </Animated.View>
+              </TouchableOpacity>
 
               {/* Companion + Time Question */}
               <View style={styles.companionSection}>

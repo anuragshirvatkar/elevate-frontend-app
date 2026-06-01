@@ -1,9 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as ExpoSplashScreen from 'expo-splash-screen';
 import { colors, typography } from '../theme';
 
-const SplashScreen = () => {
+interface SplashScreenProps {
+  onDone: () => void;
+}
+
+const SplashScreen = ({ onDone }: SplashScreenProps) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.85)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
@@ -18,6 +23,8 @@ const SplashScreen = () => {
         setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}), 150);
         Animated.timing(taglineOpacity, { toValue: 1, duration: 800, useNativeDriver: true }).start();
       }
+      ExpoSplashScreen.hideAsync().catch(() => {});
+      onDone();
     });
   }, []);
 

@@ -427,24 +427,61 @@ const PillarsScreen = () => {
   };
 
   const addSystemBook = async (book: BookDto) => {
+    const activeCount = mind.books.filter((b) => !b.isCompleted).length;
+    if (activeCount >= 3) {
+      showAlert('Max 3 active books', 'You can only have up to 3 active books at a time. Mark one as complete to add another.');
+      setShowBookPicker(false);
+      return;
+    }
     setShowBookPicker(false);
     setBookPickerLoading(true);
     try {
+      const existingUserBookIds = mind.books.map((b) => b.userBookId);
+      const existingSet = new Set(existingUserBookIds);
+
+      // Step 1: create user_book association for the new system book (bookId != userBookId)
       await setupApi.saveProgress({
         sections: { mind: { bookIds: [book.id] } },
       });
-      const mindRes = await setupApi.getMind();
-      const mn = mindRes.data as MindSetup;
-      setMind((s) => ({
-        ...s,
-        books: (mn.books ?? []).map((b) => ({
-          userBookId: b.userBookId,
-          title: b.title,
-          author: b.author,
-          isCompleted: b.isCompleted,
-          aiSummary: b.aiSummary ?? null,
-        })),
-      }));
+
+      // Step 2: reload to discover the new book's userBookId
+      const midRes = await setupApi.getMind();
+      const freshBooks = (midRes.data as MindSetup).books ?? [];
+
+      if (existingUserBookIds.length === 0) {
+        setMind((s) => ({
+          ...s,
+          books: freshBooks.map((b) => ({
+            userBookId: b.userBookId, title: b.title, author: b.author,
+            isCompleted: b.isCompleted, aiSummary: b.aiSummary ?? null,
+          })),
+        }));
+      } else {
+        const newBook = freshBooks.find((b) => !existingSet.has(b.userBookId));
+        if (newBook) {
+          // Step 3: restore all books (existing + new) via putMind which accepts userBookIds
+          await setupApi.putMind({
+            books: [...existingUserBookIds, newBook.userBookId].map((id) => ({ userBookId: id })),
+          });
+          const finalRes = await setupApi.getMind();
+          const finalBooks = (finalRes.data as MindSetup).books ?? [];
+          setMind((s) => ({
+            ...s,
+            books: finalBooks.map((b) => ({
+              userBookId: b.userBookId, title: b.title, author: b.author,
+              isCompleted: b.isCompleted, aiSummary: b.aiSummary ?? null,
+            })),
+          }));
+        } else {
+          setMind((s) => ({
+            ...s,
+            books: freshBooks.map((b) => ({
+              userBookId: b.userBookId, title: b.title, author: b.author,
+              isCompleted: b.isCompleted, aiSummary: b.aiSummary ?? null,
+            })),
+          }));
+        }
+      }
       mindEnabledUnsaved.current = false;
     } catch {
       showAlert('Error', 'Failed to add book.');
@@ -456,6 +493,8 @@ const PillarsScreen = () => {
   const handleAddCustomBook = async () => {
     const title = customBookTitle.trim();
     if (!title) { showAlert('Error', 'Title is required.'); return; }
+    const activeCount = mind.books.filter((b) => !b.isCompleted).length;
+    if (activeCount >= 3) { showAlert('Max 3 active books', 'You can only have up to 3 active books at a time. Mark one as complete to add another.'); return; }
     setAddingCustomBook(true);
     try {
       const { data } = await booksApi.createCustom({
@@ -484,12 +523,26 @@ const PillarsScreen = () => {
   };
 
   const toggleBook = (userBookId: string) => {
-    setMind((s) => ({
-      ...s,
-      books: s.books.map((b) =>
-        b.userBookId === userBookId ? { ...b, isCompleted: !b.isCompleted } : b
-      ),
-    }));
+    const book = mind.books.find((b) => b.userBookId === userBookId);
+    if (!book || book.isCompleted) return;
+
+    showAlert(
+      'Mark as Complete',
+      `Have you finished "${book.title}"? This can't be changed later.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark Complete',
+          style: 'default',
+          onPress: () => setMind((s) => ({
+            ...s,
+            books: s.books.map((b) =>
+              b.userBookId === userBookId ? { ...b, isCompleted: true } : b
+            ),
+          })),
+        },
+      ]
+    );
   };
 
   const handleGenerateSummary = async (userBookId: string) => {
@@ -804,11 +857,13 @@ const PillarsScreen = () => {
       {/* Books */}
       <View style={s.rowGroup}>
         <View style={s.groupLabelRow}>
-          <Text style={s.groupLabel}>Books</Text>
-          <TouchableOpacity style={s.addBookBtn} onPress={openBookPicker} activeOpacity={0.7}>
-            <Ionicons name="add" size={14} color="#000" />
-            <Text style={s.addBookBtnText}>Add</Text>
-          </TouchableOpacity>
+          <Text style={s.groupLabel}>Books ({mind.books.filter((b) => !b.isCompleted).length}/3 active)</Text>
+          {mind.books.filter((b) => !b.isCompleted).length < 3 && (
+            <TouchableOpacity style={s.addBookBtn} onPress={openBookPicker} activeOpacity={0.7}>
+              <Ionicons name="add" size={14} color="#000" />
+              <Text style={s.addBookBtnText}>Add</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {mind.books.length === 0 ? (
@@ -823,14 +878,20 @@ const PillarsScreen = () => {
                   {b.author ? <Text style={s.bookAuthor}>{b.author}</Text> : null}
                 </View>
                 <View style={s.rowRight}>
-                  <Text style={s.rowValueSmall}>Mark Complete</Text>
-                  <Switch
-                    value={b.isCompleted}
-                    onValueChange={() => toggleBook(b.userBookId)}
-                    trackColor={{ false: '#1a1a1a', true: '#fff' }}
-                    thumbColor={b.isCompleted ? '#000' : '#555'}
-                    ios_backgroundColor="#1a1a1a"
-                  />
+                  {b.isCompleted ? (
+                    <Text style={s.rowValueSmall}>Completed ✓</Text>
+                  ) : (
+                    <>
+                      <Text style={s.rowValueSmall}>Mark Complete</Text>
+                      <Switch
+                        value={false}
+                        onValueChange={() => toggleBook(b.userBookId)}
+                        trackColor={{ false: '#1a1a1a', true: '#fff' }}
+                        thumbColor={'#555'}
+                        ios_backgroundColor="#1a1a1a"
+                      />
+                    </>
+                  )}
                 </View>
               </View>
 

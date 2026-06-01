@@ -193,6 +193,12 @@ const StatsScreen = () => {
                 <Text style={styles.metricVal}>{stats.journaling.averageMood.toFixed(1)}/5</Text>
               </View>
             )}
+            {(stats.journaling as any).totalPoints !== undefined && (
+              <View style={styles.metricRow}>
+                <Text style={styles.metricLabel}>Points Earned</Text>
+                <Text style={[styles.metricVal, { color: colors.success }]}>+{(stats.journaling as any).totalPoints}</Text>
+              </View>
+            )}
           </Card>
 
           <View style={{ height: 32 }} />

@@ -85,6 +85,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
   const [timePickerVisible, setTimePickerVisible] = useState(false);
   const [timeDate, setTimeDate] = useState(new Date());
   const [mindIntroVisible, setMindIntroVisible] = useState(false);
+  const [customBookIds, setCustomBookIds] = useState<Set<string>>(new Set());
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -109,8 +110,46 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
 
         const mind = progressData.sections?.mind;
 
-        if (mind?.books?.length) {
-          setSelectedBooks(mind.books.map((b: any) => b.userBookId || b.id));
+        // Try to fetch custom books, handle 404 gracefully
+        let customIds: string[] = [];
+        try {
+          const { data: customBooksData } = await booksApi.getCustom();
+
+          if (customBooksData.length > 0) {
+            customIds = customBooksData.map((b: any) => b.id);
+            setCustomBookIds(new Set(customIds));
+
+            const mappedCustomBooks = customBooksData.map((b: any): BookDto => ({
+              id: b.id,
+              title: b.title,
+              author: b.author,
+              pages: b.pages,
+            }));
+            setBooks((prev) => [...prev, ...mappedCustomBooks]);
+          }
+        } catch (err: any) {
+          if (err?.response?.status !== 404) {
+            console.error('Failed to load custom books:', err);
+          }
+        }
+
+        // Selection priority rule:
+        // 1. Custom books always first (up to 3)
+        // 2. If slots remain (<3), fill with system books that user had previously saved
+        // 3. Never auto-select system books that weren't previously chosen
+        const savedSystemIds: string[] = mind?.books
+          ? (mind.books as any[])
+              .map((b) => b.userBookId || b.id)
+              .filter((id: string) => !customIds.includes(id))
+          : [];
+
+        const prioritized = [
+          ...customIds.slice(0, 3),
+          ...savedSystemIds.slice(0, Math.max(0, 3 - customIds.length)),
+        ].slice(0, 3);
+
+        if (prioritized.length > 0) {
+          setSelectedBooks(prioritized);
         }
 
         if (mind?.restDays?.length) {
@@ -198,8 +237,14 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
     ]).start();
   };
 
-  const displayedBooks = books.slice(0, 5);
-  const hiddenBooks = books.slice(5);
+  const customBooks = books.filter(book => customBookIds.has(book.id));
+  const nonCustomBooks = books.filter(book => !customBookIds.has(book.id));
+  
+  // Calculate how many predefined items to show (5 - custom count)
+  const customCount = customBooks.length;
+  const predefinedCountToShow = Math.max(0, 5 - customCount);
+  const displayedBooks = nonCustomBooks.slice(0, predefinedCountToShow);
+  const hiddenBooks = nonCustomBooks.slice(predefinedCountToShow);
 
   const toggleBook = (id: string) => {
     if (selectedBooks.includes(id)) {
@@ -218,6 +263,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
     try {
       const { data } = await booksApi.createCustom({ title, author: customAuthor.trim() || undefined });
       setBooks((prev) => [...prev, { id: data.id, title: data.title, author: data.author }]);
+      setCustomBookIds((prev) => new Set(prev).add(data.id));
       setSelectedBooks((prev) => {
         if (prev.length >= 3) return prev;
         return [...prev, data.id];
@@ -451,6 +497,19 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
               </View>
 
               <View style={styles.grid}>
+                {customBooks.map((book) => {
+                  const isSelected = selectedBooks.includes(book.id);
+                  return (
+                    <TouchableOpacity key={book.id} style={styles.bookCard} onPress={() => toggleBook(book.id)} activeOpacity={0.7}>
+                      <View style={[styles.bookInner, isSelected && styles.bookCardSelected]}>
+                        <Text style={[styles.bookTitle, isSelected && styles.bookTitleSelected]} numberOfLines={1}>{book.title}</Text>
+                        {book.author && <Text style={styles.bookAuthor} numberOfLines={1}>{book.author}</Text>}
+                        {isSelected && <Text style={styles.tick}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+
                 {displayedBooks.map((book) => {
                   const isSelected = selectedBooks.includes(book.id);
                   return (
@@ -597,25 +656,28 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                 </Animated.View>
               </TouchableOpacity>
 
-              {/* Rest Day Summary */}
-              <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
-                <View style={styles.tweetRow}>
-                  <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
-                    {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
-                    )}
-                  </View>
-                  <View style={styles.tweetBody}>
-                    <View style={styles.tweetHeader}>
-                      <Text style={styles.tweetName}>Rest day</Text>
-                      <Text style={styles.tweetMeta}>· selected</Text>
+              {/* Rest Day Summary - Editable */}
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(1)}>
+                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
+                  <View style={styles.tweetRow}>
+                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
+                      {companion?.image && (
+                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                      )}
                     </View>
-                    <Text style={styles.tweetText}>
-                      {restDays.join(', ') || 'None'}
-                    </Text>
+                    <View style={styles.tweetBody}>
+                      <View style={styles.tweetHeader}>
+                        <Text style={styles.tweetName}>Rest day</Text>
+                        <Text style={styles.tweetMeta}>· selected</Text>
+                        <Text style={styles.tweetEdit}>✎</Text>
+                      </View>
+                      <Text style={styles.tweetText}>
+                        {restDays.join(', ') || 'None'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              </Animated.View>
+                </Animated.View>
+              </TouchableOpacity>
 
               {/* Companion + Time Question */}
               <View style={styles.companionSection}>

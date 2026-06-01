@@ -107,6 +107,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
   const [customName, setCustomName] = useState('');
   const [customCreating, setCustomCreating] = useState(false);
   const [powerIntroVisible, setPowerIntroVisible] = useState(false);
+  const [customActivityIds, setCustomActivityIds] = useState<Set<string>>(new Set());
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -119,10 +120,11 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
       try {
         setScreenLoading(true);
 
-        const [{ data: optionsData }, { data: progressData }] =
+        const [{ data: optionsData }, { data: progressData }, { data: customActivitiesData }] =
           await Promise.all([
             setupApi.getOptions(),
             setupApi.getProgress(),
+            activitiesApi.getCustom(),
           ]);
 
         setActivities(optionsData.activities.power);
@@ -130,6 +132,22 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
         setCompanion(progressData.selectedCompanion || null);
 
         const power = progressData.sections?.power;
+
+        // Filter custom activities for this section
+        const sectionCustomActivities = customActivitiesData.filter((a: any) => a.section === 'power');
+        
+        if (sectionCustomActivities.length > 0) {
+          const customIds = sectionCustomActivities.map((a: any) => a.id);
+          setCustomActivityIds(new Set(customIds));
+          
+          // Add custom activities to the activities array with correct structure
+          const mappedCustomActivities = sectionCustomActivities.map((a: any): ActivityDto => ({
+            id: a.id,
+            name: a.name,
+            section: 'power' as const,
+          }));
+          setActivities((prev) => [...prev, ...mappedCustomActivities]);
+        }
 
         if (power?.activities?.length) {
           setSelectedActivities(
@@ -259,8 +277,14 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
     );
   });
 
-  const displayedActivities = sortedActivities.slice(0, 5);
-  const hiddenActivities = sortedActivities.slice(5);
+  const customActivities = sortedActivities.filter(act => customActivityIds.has(act.id));
+  const nonCustomActivities = sortedActivities.filter(act => !customActivityIds.has(act.id));
+  
+  // Calculate how many predefined items to show (5 - custom count)
+  const customCount = customActivities.length;
+  const predefinedCountToShow = Math.max(0, 5 - customCount);
+  const displayedActivities = nonCustomActivities.slice(0, predefinedCountToShow);
+  const hiddenActivities = nonCustomActivities.slice(predefinedCountToShow);
 
   const toggleActivity = (id: string) => {
     if (selectedActivities.includes(id)) {
@@ -279,6 +303,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
     try {
       const { data } = await activitiesApi.createCustom(name, 'power');
       setActivities((prev) => [...prev, data]);
+      setCustomActivityIds((prev) => new Set(prev).add(data.id));
       setSelectedActivities((prev) => {
         if (prev.length >= 3) return prev;
         return [...prev, data.id];
@@ -483,6 +508,28 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
               </View>
 
               <View style={styles.grid}>
+                {/* Custom activities */}
+                {customActivities.map((act) => {
+                  const isSelected = selectedActivities.includes(act.id);
+                  return (
+                    <TouchableOpacity
+                      key={act.id}
+                      style={styles.activityCard}
+                      onPress={() => toggleActivity(act.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.activityInner, isSelected && styles.activityCardSelected]}>
+                        <Text style={[styles.activityText, isSelected && styles.activityTextSelected]}>
+                          {act.name}
+                        </Text>
+                        {isSelected && (
+                          <Text style={styles.tick}>✓</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+
                 {/* Displayed activities */}
                 {displayedActivities.map((act) => {
                   const isSelected = selectedActivities.includes(act.id);
@@ -580,6 +627,29 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                 </Animated.View>
               </TouchableOpacity>
 
+              {/* Activity Summary - Editable */}
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(0)}>
+                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
+                  <View style={styles.tweetRow}>
+                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
+                      {companion?.image && (
+                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                      )}
+                    </View>
+                    <View style={styles.tweetBody}>
+                      <View style={styles.tweetHeader}>
+                        <Text style={styles.tweetName}>Power activities</Text>
+                        <Text style={styles.tweetMeta}>· selected</Text>
+                        <Text style={styles.tweetEdit}>✎</Text>
+                      </View>
+                      <Text style={styles.tweetText}>
+                        {selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean).join(', ')}
+                      </Text>
+                    </View>
+                  </View>
+                </Animated.View>
+              </TouchableOpacity>
+
               {/* Companion + Rest Day Question */}
               <View style={styles.companionSection}>
                 <Animated.View style={[styles.companionIconWrapper, { opacity: bubbleAnim, transform: [{ scale: bubbleAnim }] }]}>
@@ -625,45 +695,51 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
 
           {step === 2 && (
             <View style={styles.contentSection}>
-              {/* Activity Summary */}
-              <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
-                <View style={styles.tweetRow}>
-                  <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
-                    {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
-                    )}
-                  </View>
-                  <View style={styles.tweetBody}>
-                    <View style={styles.tweetHeader}>
-                      <Text style={styles.tweetName}>Power activities</Text>
-                      <Text style={styles.tweetMeta}>· selected</Text>
+              {/* Activity Summary - Editable */}
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(0)}>
+                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
+                  <View style={styles.tweetRow}>
+                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
+                      {companion?.image && (
+                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                      )}
                     </View>
-                    <Text style={styles.tweetText}>
-                      {selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean).join(', ')}
-                    </Text>
+                    <View style={styles.tweetBody}>
+                      <View style={styles.tweetHeader}>
+                        <Text style={styles.tweetName}>Power activities</Text>
+                        <Text style={styles.tweetMeta}>· selected</Text>
+                        <Text style={styles.tweetEdit}>✎</Text>
+                      </View>
+                      <Text style={styles.tweetText}>
+                        {selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean).join(', ')}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              </Animated.View>
+                </Animated.View>
+              </TouchableOpacity>
 
-              {/* Rest Day Summary */}
-              <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
-                <View style={styles.tweetRow}>
-                  <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
-                    {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
-                    )}
-                  </View>
-                  <View style={styles.tweetBody}>
-                    <View style={styles.tweetHeader}>
-                      <Text style={styles.tweetName}>Rest days</Text>
-                      <Text style={styles.tweetMeta}>· selected</Text>
+              {/* Rest Day Summary - Editable */}
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(1)}>
+                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
+                  <View style={styles.tweetRow}>
+                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
+                      {companion?.image && (
+                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                      )}
                     </View>
-                    <Text style={styles.tweetText}>
-                      {restDays.join(', ') || 'None'}
-                    </Text>
+                    <View style={styles.tweetBody}>
+                      <View style={styles.tweetHeader}>
+                        <Text style={styles.tweetName}>Rest days</Text>
+                        <Text style={styles.tweetMeta}>· selected</Text>
+                        <Text style={styles.tweetEdit}>✎</Text>
+                      </View>
+                      <Text style={styles.tweetText}>
+                        {restDays.join(', ') || 'None'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              </Animated.View>
+                </Animated.View>
+              </TouchableOpacity>
 
               {/* Companion + Time Question */}
               <View style={styles.companionSection}>

@@ -69,6 +69,14 @@ const SECTIONS: Section[] = [
       { label: '3 relapses', points: '−60' },
     ],
   },
+  {
+    key: 'journaling',
+    label: 'Journaling',
+    Icon: ({ width, height, ...props }: any) => <Ionicons name="journal-outline" size={width ?? 18} color="#fff" />,
+    rules: [
+      { label: 'Journal entry submitted', points: '+5' },
+    ],
+  },
 ];
 
 const NOTES = [

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -12,8 +12,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const RootNavigator = () => {
   const { isLoading, isAuthenticated, user, isNewUser, daysSinceLastLogin } = useAuth();
+  const [splashDone, setSplashDone] = useState(false);
 
-  if (isLoading) return <SplashScreen />;
+  if (isLoading || !splashDone) return <SplashScreen onDone={() => setSplashDone(true)} />;
 
   const showWelcomeBack =
     isAuthenticated &&
@@ -22,7 +23,7 @@ const RootNavigator = () => {
     daysSinceLastLogin > 29;
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
         <Stack.Screen name="Auth" component={AuthNavigator} />
       ) : showWelcomeBack ? (

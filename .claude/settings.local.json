@@ -8,7 +8,13 @@
       "Bash(npm install *)",
       "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\(p.dependencies['@react-native-community/netinfo']\\)\")",
       "Bash(npx expo *)",
-      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(p.dependencies['expo-auth-session'], p.dependencies['expo-web-browser']\\)\")"
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(p.dependencies['expo-auth-session'], p.dependencies['expo-web-browser']\\)\")",
+      "PowerShell(Tee-Object *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(npx patch-package *)",
+      "PowerShell(\\(Get-Content \"C:\\\\Projects\\\\elevate-frontend\\\\patches\\\\expo-modules-core+1.12.26.patch\" | Measure-Object -Line\\).Lines)",
+      "Bash(node scripts/fix-expo-modules-core.js)",
+      "Bash(npm uninstall *)"
     ]
   }
 }

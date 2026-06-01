@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authApi, appTrackingApi } from '../api';
+import { authApi, appTrackingApi, notificationsApi } from '../api';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { setAuthExpiredHandler, refreshTokenRequest } from '../api/client';
 import { useAlert } from './AlertContext';
 import type { UserResponse } from '../types';
@@ -92,6 +94,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ]);
     setState({ isLoading: false, isAuthenticated: true, user, accessToken, isNewUser, daysSinceLastLogin });
     appTrackingApi.trackOpen().catch(() => {});
+    if (Device.isDevice) {
+      (async () => {
+        try {
+          const { status } = await Notifications.requestPermissionsAsync();
+          if (status === 'granted') {
+            const tokenData = await Notifications.getExpoPushTokenAsync();
+            notificationsApi.registerDevice(tokenData.data).catch(() => {});
+          }
+        } catch {}
+      })();
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -99,7 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const refreshToken = await AsyncStorage.getItem('refreshToken');
       if (refreshToken) await authApi.logout(refreshToken);
     } catch {}
-    await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+    await AsyncStorage.clear();
     setState({ isLoading: false, isAuthenticated: false, user: null, accessToken: null, isNewUser: false, daysSinceLastLogin: 0 });
   }, []);
 
