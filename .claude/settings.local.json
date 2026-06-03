@@ -18,7 +18,20 @@
       "PowerShell(java *)",
       "PowerShell(& \"C:\\\\Program Files\\\\Java\\\\jdk-17\\\\bin\\\\java.exe\" -version 2>&1)",
       "PowerShell($env:JAVA_HOME = \"C:\\\\Program Files\\\\Java\\\\jdk-17\"; $env:PATH = \"$env:JAVA_HOME\\\\bin;$env:PATH\"; Set-Location \"C:\\\\Projects\\\\elevate-frontend\\\\android\"; .\\\\gradlew.bat assembleDebug 2>&1)",
-      "PowerShell($env:JAVA_HOME = \"C:\\\\Program Files\\\\Java\\\\jdk-17\"; $env:PATH = \"$env:JAVA_HOME\\\\bin;$env:PATH\"; Set-Location \"C:\\\\Projects\\\\elevate-frontend\\\\android\"; .\\\\gradlew.bat :expo-modules-core:compileDebugKotlin 2>&1)"
+      "PowerShell($env:JAVA_HOME = \"C:\\\\Program Files\\\\Java\\\\jdk-17\"; $env:PATH = \"$env:JAVA_HOME\\\\bin;$env:PATH\"; Set-Location \"C:\\\\Projects\\\\elevate-frontend\\\\android\"; .\\\\gradlew.bat :expo-modules-core:compileDebugKotlin 2>&1)",
+      "PowerShell(Remove-Item *)",
+      "Bash(cmd.exe /c \"rd /s /q \\\\\"%USERPROFILE%\\\\\\\\.gradle\\\\\\\\caches\\\\\\\\8.8\\\\\\\\transforms\\\\\"\")",
+      "Bash(echo \"exit: $?\")",
+      "PowerShell(Test-Path *)",
+      "Bash(cmd.exe /c \"gradlew.bat app:assembleDebug -x lint -x test --no-build-cache --no-configuration-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a\")",
+      "Bash(adb devices *)",
+      "Bash(./gradlew app:assembleDebug -x lint -x test --no-build-cache --no-configuration-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a)",
+      "Bash(adb install *)",
+      "Bash(adb shell *)",
+      "Bash(adb *)",
+      "PowerShell(Get-Process *)",
+      "Bash(dir \"C:\\\\Projects\\\\elevate-frontend\\\\node_modules\\\\expo-av\\\\android\\\\build\\\\intermediates\\\\cxx\\\\Debug\\\\3m4u364j\\\\obj\\\\arm64-v8a\\\\\" 2>&1 *)",
+      "Bash(./gradlew.bat app:assembleDebug -x lint -x test --configure-on-demand --no-build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)"
     ]
   }
 }

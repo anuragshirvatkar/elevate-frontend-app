@@ -28,9 +28,10 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
   ).current;
 
   useEffect(() => {
-    inputRef.current?.focus();
+    // Delay focus slightly so the component is fully mounted before the keyboard is requested
+    const focusTimer = setTimeout(() => inputRef.current?.focus(), 100);
     const timer = setInterval(() => setCountdown((c) => Math.max(0, c - 1)), 1000);
-    return () => clearInterval(timer);
+    return () => { clearTimeout(focusTimer); clearInterval(timer); };
   }, []);
 
   useEffect(() => {
@@ -112,7 +113,10 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
               <TouchableOpacity
                 key={i}
                 onPress={() => {
-                  inputRef.current?.focus();
+                  // blur→focus cycle forces the OS to re-show the keyboard
+                  // (calling focus() alone fails on Android after keyboard is manually dismissed)
+                  inputRef.current?.blur();
+                  setTimeout(() => inputRef.current?.focus(), 50);
                 }}
                 activeOpacity={0.7}
               >
@@ -158,6 +162,7 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
             maxLength={OTP_LENGTH}
             style={styles.hiddenInput}
             caretHidden
+            autoFocus
             showSoftInputOnFocus
           />
 

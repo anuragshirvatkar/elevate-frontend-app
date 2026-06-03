@@ -74,7 +74,10 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
       } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         showAlert('Error', 'Google Play Services not available.');
       } else {
-        const msg = err?.response?.data?.message || 'Google sign-in failed. Please try again.';
+        console.log('Google sign-in error:', err);
+        console.log('Error response:', err?.response);
+        console.log('Error data:', err?.response?.data);
+        const msg = err?.response?.data?.message || err?.message || 'Google sign-in failed. Please try again.';
         showAlert('Error', msg);
       }
     } finally {

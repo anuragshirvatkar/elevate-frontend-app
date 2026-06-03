@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Modal,
+  ActivityIndicator, RefreshControl, Modal, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { leaderboardApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -31,8 +31,9 @@ const SECTIONS: { label: string; value: LeaderboardSection }[] = [
 ];
 
 const PODIUM_COLOR: Record<number, string> = { 1: GOLD, 2: SILVER, 3: BRONZE };
-const PODIUM_HEIGHT: Record<number, number> = { 1: 190, 2: 152, 3: 128 };
-const PODIUM_AVATAR: Record<number, number> = { 1: 50, 2: 42, 3: 36 };
+const PODIUM_HEIGHT: Record<number, number> = { 1: 220, 2: 180, 3: 180 };
+const PODIUM_AVATAR: Record<number, number> = { 1: 56, 2: 44, 3: 44 };
+const PODIUM_WIDTH: Record<number, number> = { 1: 1.2, 2: 1, 3: 1 };
 
 interface PodiumBoxProps {
   entry?: LeaderboardEntry;
@@ -44,25 +45,29 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
   const color = PODIUM_COLOR[rank];
   const height = PODIUM_HEIGHT[rank];
   const avatarSize = PODIUM_AVATAR[rank];
+  const flex = PODIUM_WIDTH[rank];
   const isEmpty = !entry;
 
   return (
     <View
       style={[
         styles.podiumBox,
-        { height, borderColor: color, backgroundColor: color + '22' },
-        isMe && {
+        { height, borderColor: color + '60', flex },
+        {
           shadowColor: color,
-          shadowOpacity: 0.85,
-          shadowRadius: 20,
+          shadowOpacity: rank === 1 ? 0.6 : 0.35,
+          shadowRadius: rank === 1 ? 24 : 18,
           shadowOffset: { width: 0, height: 0 },
-          elevation: 14,
+          elevation: rank === 1 ? 12 : 8,
         },
       ]}
     >
+      {/* Inner card overlay */}
+      <View style={styles.podiumInnerCard} />
+
       {/* Rank badge — top-right */}
       <View style={[styles.podiumRankBadge, { backgroundColor: color }]}>
-        <Text style={[styles.podiumRankText, { color: '#000' }]}>#{rank}</Text>
+        <Text style={styles.podiumRankText}>#{rank}</Text>
       </View>
 
       {/* Avatar */}
@@ -77,19 +82,26 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
           },
         ]}
       >
-        <Text style={[styles.podiumAvatarText, { fontSize: rank === 1 ? 20 : 15 }]}>
-          {isEmpty ? '?' : (entry.name[0]?.toUpperCase() || '?')}
-        </Text>
+        {!isEmpty && entry.profileImageUrl ? (
+          <Image
+            source={{ uri: entry.profileImageUrl }}
+            style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }}
+          />
+        ) : (
+          <Text style={[styles.podiumAvatarText, { fontSize: rank === 1 ? 22 : 16 }]}>
+            {isEmpty ? '?' : (entry.name[0]?.toUpperCase() || '?')}
+          </Text>
+        )}
       </View>
 
       {/* Points */}
-      <Text style={[styles.podiumPoints, { color, fontSize: rank === 1 ? 14 : 12 }]}>
+      <Text style={[styles.podiumPoints, { color, fontSize: rank === 1 ? 28 : 22 }]}>
         {isEmpty ? '—' : entry.points.toLocaleString()}
         {!isEmpty && <Text style={styles.podiumPtsSuffix}> pts</Text>}
       </Text>
 
       {/* Name */}
-      <Text style={[styles.podiumName, { fontSize: rank === 1 ? 12 : 10 }]} numberOfLines={1}>
+      <Text style={[styles.podiumName, { fontSize: rank === 1 ? 13 : 11 }]} numberOfLines={1}>
         {isEmpty ? '—' : entry.name}
       </Text>
     </View>
@@ -98,11 +110,13 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
 
 const LeaderboardScreen = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { user } = useAuth();
   const [rankings, setRankings] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<{ rank: number; points: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const initialSectionApplied = useRef(false);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
@@ -122,6 +136,19 @@ const LeaderboardScreen = () => {
     setLoading(false);
     setRefreshing(false);
   }, []);
+
+  // Apply section filter from route params on initial mount
+  useEffect(() => {
+    const sectionParam = route.params?.section as LeaderboardSection | undefined;
+    if (sectionParam && SECTIONS.some(s => s.value === sectionParam) && !initialSectionApplied.current) {
+      initialSectionApplied.current = true;
+      activeFilter.current.section = sectionParam;
+      setSection(sectionParam);
+      setPendingSection(sectionParam);
+      setLoading(true);
+      load(activeFilter.current.period, sectionParam);
+    }
+  }, [route.params, load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -173,7 +200,14 @@ const LeaderboardScreen = () => {
           <Text style={styles.rankBadgeText}>#{item.rank}</Text>
         </View>
         <View style={[styles.rowAvatar, isMe && styles.rowAvatarMe]}>
-          <Text style={[styles.rowAvatarText, isMe && { color: '#000' }]}>{item.name[0]?.toUpperCase() || '?'}</Text>
+          {item.profileImageUrl ? (
+            <Image
+              source={{ uri: item.profileImageUrl }}
+              style={{ width: 32, height: 32, borderRadius: 16 }}
+            />
+          ) : (
+            <Text style={[styles.rowAvatarText, isMe && { color: '#000' }]}>{item.name[0]?.toUpperCase() || '?'}</Text>
+          )}
         </View>
         <Text style={[styles.rowName, isMe && styles.rowNameMe]} numberOfLines={1}>
           {item.name}{isMe ? ' (you)' : ''}
@@ -241,7 +275,14 @@ const LeaderboardScreen = () => {
                   <Text style={styles.rankBadgeText}>#{myEntry.rank}</Text>
                 </View>
                 <View style={[styles.rowAvatar, { borderColor: '#000', backgroundColor: '#e0e0e0' }]}>
-                  <Text style={[styles.rowAvatarText, { color: '#000' }]}>{myEntry.name[0]?.toUpperCase() || '?'}</Text>
+                  {myEntry.profileImageUrl ? (
+                    <Image
+                      source={{ uri: myEntry.profileImageUrl }}
+                      style={{ width: 32, height: 32, borderRadius: 16 }}
+                    />
+                  ) : (
+                    <Text style={[styles.rowAvatarText, { color: '#000' }]}>{myEntry.name[0]?.toUpperCase() || '?'}</Text>
+                  )}
                 </View>
                 <Text style={styles.myEntryName} numberOfLines={1}>{myEntry.name} (you)</Text>
                 <Text style={styles.myEntryPoints}>{myEntry.points.toLocaleString()} pts</Text>
@@ -333,50 +374,65 @@ const styles = StyleSheet.create({
   podiumRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   podiumBox: {
-    flex: 1,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: '#111111',
     alignItems: 'center',
-    paddingTop: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    paddingBottom: spacing.sm,
+    justifyContent: 'center',
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.md,
     position: 'relative',
-    gap: 5,
+    gap: 8,
+  },
+  podiumInnerCard: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
+    bottom: 6,
+    borderRadius: 16,
+    backgroundColor: '#151515',
   },
   podiumRankBadge: {
     position: 'absolute',
-    top: 7,
-    right: 8,
+    top: 10,
+    right: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   podiumRankText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
+    color: '#000',
     letterSpacing: 0.5,
   },
   podiumAvatar: {
     borderWidth: 2,
-    backgroundColor: colors.cardElevated,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
   },
   podiumAvatarText: {
     color: colors.text,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   podiumPoints: {
     fontWeight: '700',
     textAlign: 'center',
   },
   podiumPtsSuffix: {
-    fontSize: 10,
-    fontWeight: '400',
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.8,
   },
   podiumName: {
     color: colors.textSecondary,

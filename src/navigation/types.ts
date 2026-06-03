@@ -34,6 +34,7 @@ export type MainTabParamList = {
 
 export type DrawerParamList = {
   Tabs: undefined;
+  Leaderboard: { section?: string } | undefined;
   Analytics: undefined;
   Pillars: undefined;
   Achievements: undefined;
@@ -43,7 +44,8 @@ export type DrawerParamList = {
   CompanionMessages: undefined;
   JournalDetail: { entry?: JournalEntry };
   RecordDetail: { date: string; logs: ActivityLogEntry[]; section?: string };
-  EditProfile: undefined;
+  EditProfile: { scrollToSection?: string } | undefined;
+  PublicProfile: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;

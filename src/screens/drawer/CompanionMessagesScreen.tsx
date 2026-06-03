@@ -142,6 +142,35 @@ const CompanionMessagesScreen = () => {
                 <Ionicons name="chevron-forward" size={13} color={colors.background} />
               </TouchableOpacity>
             )}
+
+            {(item.type === 'LEADERBOARD_ENTERED' || item.type === 'LEADERBOARD_MOVED' || item.type === 'LEADERBOARD_NEAR') && (
+              <TouchableOpacity
+                style={styles.showBtn}
+                onPress={() => {
+                  const meta = item.metadata as any;
+                  const validSections = ['power', 'purity', 'craft', 'mind', 'all'];
+                  const metaSection = validSections.includes(meta?.section) ? meta.section : undefined;
+                  const titleSection = validSections.find(s => item.title?.toLowerCase().includes(s));
+                  const section = metaSection ?? titleSection ?? 'all';
+                  (navigation as any).navigate('Leaderboard', { section });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.showBtnText}>View Leaderboard</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.background} />
+              </TouchableOpacity>
+            )}
+
+            {item.type === 'AVATAR_UNLOCKED' && (
+              <TouchableOpacity
+                style={styles.showBtn}
+                onPress={() => (navigation as any).navigate('EditProfile', { scrollToSection: 'avatar' })}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.showBtnText}>Change Avatar</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.background} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>

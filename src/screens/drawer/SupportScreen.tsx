@@ -10,6 +10,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supportApi, helpApi } from '../../api';
 import { colors, spacing, typography } from '../../theme';
+import ImageSourceSheet from '../../components/common/ImageSourceSheet';
 import { useAlert } from '../../context/AlertContext';
 import type { SupportIssueType, SupportTicket } from '../../types';
 
@@ -57,6 +58,7 @@ const SupportScreen = () => {
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<PickedImage[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [showSourceSheet, setShowSourceSheet] = useState(false);
 
   const formScrollRef = useRef<ScrollView>(null);
 
@@ -83,11 +85,8 @@ const SupportScreen = () => {
     setShowForm(true);
   };
 
-  const handlePickImage = async () => {
-    if (images.length >= 5) {
-      showAlert('Limit reached', 'You can attach up to 5 images.');
-      return;
-    }
+  const pickFromLibrary = async () => {
+    if (images.length >= 5) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       showAlert('Permission required', 'Please allow access to your photo library.');
@@ -107,6 +106,36 @@ const SupportScreen = () => {
       }));
       setImages((prev) => [...prev, ...picked].slice(0, 5));
     }
+  };
+
+  const takeWithCamera = async () => {
+    if (images.length >= 5) return;
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      showAlert('Permission required', 'Please allow access to your camera.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const picked: PickedImage = {
+        uri: asset.uri,
+        name: asset.fileName || `image_${Date.now()}.jpg`,
+        type: asset.mimeType || 'image/jpeg',
+      };
+      setImages((prev) => [...prev, picked].slice(0, 5));
+    }
+  };
+
+  const handlePickImage = () => {
+    if (images.length >= 5) {
+      showAlert('Limit reached', 'You can attach up to 5 images.');
+      return;
+    }
+    setShowSourceSheet(true);
   };
 
   const handleSubmit = async () => {
@@ -326,6 +355,13 @@ const SupportScreen = () => {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <ImageSourceSheet
+        visible={showSourceSheet}
+        onCamera={takeWithCamera}
+        onLibrary={pickFromLibrary}
+        onClose={() => setShowSourceSheet(false)}
+      />
     </SafeAreaView>
   );
 };

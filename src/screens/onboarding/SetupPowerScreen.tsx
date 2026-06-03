@@ -620,30 +620,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                         <Text style={styles.tweetEdit}>✎</Text>
                       </View>
                       <Text style={styles.tweetText}>
-                        {selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean).join(', ')}
-                      </Text>
-                    </View>
-                  </View>
-                </Animated.View>
-              </TouchableOpacity>
-
-              {/* Activity Summary - Editable */}
-              <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(0)}>
-                <Animated.View style={[styles.tweet, { opacity: textAnim, transform: [{ translateY: summarySlide }] }]}>
-                  <View style={styles.tweetRow}>
-                    <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
-                      {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
-                      )}
-                    </View>
-                    <View style={styles.tweetBody}>
-                      <View style={styles.tweetHeader}>
-                        <Text style={styles.tweetName}>Power activities</Text>
-                        <Text style={styles.tweetMeta}>· selected</Text>
-                        <Text style={styles.tweetEdit}>✎</Text>
-                      </View>
-                      <Text style={styles.tweetText}>
-                        {selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean).join(', ')}
+                        {[...new Set(selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean))].join(', ')}
                       </Text>
                     </View>
                   </View>
@@ -711,7 +688,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                         <Text style={styles.tweetEdit}>✎</Text>
                       </View>
                       <Text style={styles.tweetText}>
-                        {selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean).join(', ')}
+                        {[...new Set(selectedActivities.map(id => activities.find(a => a.id === id)?.name).filter(Boolean))].join(', ')}
                       </Text>
                     </View>
                   </View>

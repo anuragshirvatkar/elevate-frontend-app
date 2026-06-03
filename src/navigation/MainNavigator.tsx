@@ -76,6 +76,7 @@ const MainNavigator = () => (
     }}
   >
     <Drawer.Screen name="Tabs" component={TabNavigator} />
+    <Drawer.Screen name="Leaderboard" component={LeaderboardScreen} />
     <Drawer.Screen name="Analytics" component={AnalyticsScreen} />
     <Drawer.Screen name="Pillars" component={PillarsScreen} />
     <Drawer.Screen name="Achievements" component={AchievementsScreen} />

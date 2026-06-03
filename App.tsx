@@ -32,7 +32,7 @@ function AppContent() {
   const navigationRef = useRef<any>(null);
   const [inAppNotif, setInAppNotif] = useState<InAppNotificationData | null>(null);
   const pendingActionRef = useRef<(() => void) | null>(null);
-  //usePushNotifications(isAuthenticated);
+  usePushNotifications(isAuthenticated);
 
 
   // Show in-app notification card for foreground notifications
@@ -59,7 +59,9 @@ function AppContent() {
       case 'power_streak_at_risk':
       case 'craft_streak_at_risk':
       case 'mind_streak_at_risk':
+      case 'purity_streak_at_risk':
       case 'activity_reminder':
+      case 'inactive_final':
         return StackActions.replace('Main', { screen: 'Home' });
       case 'leaderboard_entered_top3':
       case 'near_top3':

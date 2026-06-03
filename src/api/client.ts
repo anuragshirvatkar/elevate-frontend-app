@@ -30,6 +30,12 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (config.method === 'get') {
+    config.params = {
+      ...config.params,
+      today: new Date().toLocaleDateString('en-CA'),
+    };
+  }
   console.log('🚀 API Request:', {
     method: config.method?.toUpperCase(),
     url: config.url,

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi, appTrackingApi, notificationsApi } from '../api';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { setAuthExpiredHandler, refreshTokenRequest } from '../api/client';
 import { useAlert } from './AlertContext';
 import type { UserResponse } from '../types';
@@ -99,7 +100,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const { status } = await Notifications.requestPermissionsAsync();
           if (status === 'granted') {
-            const tokenData = await Notifications.getExpoPushTokenAsync();
+            const projectId: string =
+              Constants.easConfig?.projectId ??
+              Constants.expoConfig?.extra?.eas?.projectId ??
+              'bb1958d6-83d6-427d-9313-243fc78d9b1d';
+            const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
             notificationsApi.registerDevice(tokenData.data).catch(() => {});
           }
         } catch {}

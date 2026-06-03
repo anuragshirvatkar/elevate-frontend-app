@@ -254,6 +254,7 @@ export interface LeaderboardEntry {
   userId: string;
   name: string;
   avatar?: string;
+  profileImageUrl?: string;
   points: number;
 }
 

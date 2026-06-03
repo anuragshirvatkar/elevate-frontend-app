@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { profileApi, setupApi } from '../../api';
 import { useUser } from '../../context/UserContext';
@@ -49,8 +49,11 @@ const fmtDateDisplay = (iso?: string) => {
 
 const EditProfileScreen = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { profile, fetchProfile } = useUser();
   const { showAlert } = useAlert();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const avatarSectionY = useRef(0);
 
   // ── Form state ──
   const [username, setUsername] = useState(profile?.username || '');
@@ -92,6 +95,16 @@ const EditProfileScreen = () => {
       .then(({ data }) => setAllCompanions((data as any).companions ?? []))
       .catch(() => {});
   }, []);
+
+  // ── Scroll to section on mount ──
+  useEffect(() => {
+    const scrollTo = route.params?.scrollToSection;
+    if (scrollTo === 'avatar' && scrollViewRef.current && avatarSectionY.current > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: avatarSectionY.current, animated: true });
+      }, 300);
+    }
+  }, [route.params]);
 
   // ── Unsaved changes guard ──
   const origUsername = profile?.username || '';
@@ -225,7 +238,7 @@ const EditProfileScreen = () => {
           <Text style={styles.headerTitle}>Edit Profile</Text>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scrollViewRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
           {/* ── Username (Save button inline with section title) ── */}
           <View style={styles.section}>
@@ -351,7 +364,7 @@ const EditProfileScreen = () => {
           </View>
 
           {/* ── Avatars ── */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={(e) => { avatarSectionY.current = e.nativeEvent.layout.y; }}>
             <Text style={styles.sectionTitle}>Avatar</Text>
             <Text style={styles.sectionSub}>Swipe to browse · tap to select</Text>
             <FlatList

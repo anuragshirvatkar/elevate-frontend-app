@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import ImageSourceSheet from '../common/ImageSourceSheet';
 import { activitiesApi, setupApi, uploadsApi, helpApi } from '../../api';
 import { useUser } from '../../context/UserContext';
 import type { ActivityLogEntry } from '../../types';
@@ -70,9 +71,11 @@ const NO_REASON_OPTIONS = ['Tired', 'No time', 'Forgot', 'No motivation', 'Sick'
 
 
 const HOURS_OPTIONS = [
-  { label: '< 1h', minutes: 50 },
-  { label: '1-2h', minutes: 100 },
-  { label: '2h+', minutes: 140 },
+  { label: '< 45', minutes: 40 },
+  { label: '1hr', minutes: 60 },
+  { label: '1-1.5', minutes: 80 },
+  { label: '< 2hr', minutes: 100 },
+  { label: '2hr+', minutes: 125 },
 ];
 const HOURS_LABEL_TO_MINUTES: Record<string, number> = Object.fromEntries(
   HOURS_OPTIONS.map((o) => [o.label, o.minutes])
@@ -81,9 +84,11 @@ const HOURS_LABEL_TO_MINUTES: Record<string, number> = Object.fromEntries(
 // Convert API hours value back to the display label
 const hoursValueToLabel = (hours?: number): string => {
   if (!hours) return '';
-  if (hours <= 1) return '< 1h';
-  if (hours <= 2) return '1-2h';
-  return '2h+';
+  if (hours <= 0.75) return '< 45';
+  if (hours <= 1) return '1hr';
+  if (hours <= 1.5) return '1-1.5';
+  if (hours < 2) return '< 2hr';
+  return '2hr+';
 };
 
 
@@ -108,6 +113,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [companion, setCompanion] = useState<CompanionDto | null>(null);
   const [hasActivePhase, setHasActivePhase] = useState(false);
+  const [hasPendingInput, setHasPendingInput] = useState(false);
   const [purityComplete, setPurityComplete] = useState(false);
   const [pointsPopup, setPointsPopup] = useState<{ points: number; nextStep: Step; msgIdx: number } | null>(null);
   const usedMsgIndices = React.useRef<number[]>([]);
@@ -125,6 +131,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       setStep('power');
       setSelectedDate(date);
       setHasActivePhase(false);
+      setHasPendingInput(false);
       setPurityComplete(false);
       setCompletedSections(new Set());
       setPrefillLocked(false);
@@ -169,9 +176,9 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
 
       const newPower: Record<string, ActivityEntry> = {};
       const newCraft: Record<string, ActivityEntry> = {};
-      let newPurity = { relapseCount: '0', description: '' };
+      let newPurity: { relapseCount: string; reasonIfNo: string } = { relapseCount: '0', reasonIfNo: '' };
       let hasPurityLog = false;
-      const newMind: Record<string, { didUserDo: boolean; description: string; images: string[] }> = {};
+      const newMind: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }> = {};
 
       for (const log of logs) {
         if (log.section === 'power' && log.activityId) {
@@ -562,17 +569,19 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   onUpdateImages={updateMindImages}
                   companion={companion}
                   onAddBooks={() => { onClose(); onNavigateToMind?.(); }}
+                  onActivePhaseChange={setHasActivePhase}
+                  onPendingChange={setHasPendingInput}
                 />
               )}
             </ScrollView>
           )}
 
-          {!hasActivePhase && (
+          {!hasActivePhase && !(step === 'purity' && !mindActive && !purityComplete) && (
             <View style={styles.footer}>
               <TouchableOpacity
-                style={[styles.nextBtn, ((step === 'purity' && !purityComplete) || prefillLocked || (step === 'mind' && !mindHasChanges && (mindBooks?.length ?? 0) > 0)) && styles.nextBtnDisabled]}
+                style={[styles.nextBtn, ((step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && !mindHasChanges && (mindBooks?.length ?? 0) > 0)) && styles.nextBtnDisabled]}
                 onPress={goNext}
-                disabled={loading || (step === 'purity' && !purityComplete) || prefillLocked || (step === 'mind' && !mindHasChanges && (mindBooks?.length ?? 0) > 0)}
+                disabled={loading || (step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && !mindHasChanges && (mindBooks?.length ?? 0) > 0)}
                 activeOpacity={0.85}
               >
                 {loading ? (
@@ -696,27 +705,13 @@ const ImageUploadSection: React.FC<{
 }> = ({ images, onImagesChange, onConfirm }) => {
   const [pendingUri, setPendingUri] = useState<string | null>(null);
   const [sizeError, setSizeError] = useState(false);
+  const [showSourceSheet, setShowSourceSheet] = useState(false);
 
-  const pickAndUpload = async () => {
-    if (images.length >= MAX_IMAGES || pendingUri) return;
-    setSizeError(false);
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-      allowsMultipleSelection: false,
-    });
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
+  const uploadAsset = async (asset: ImagePicker.ImagePickerAsset) => {
     if (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) {
       setSizeError(true);
       return;
     }
-
-    // show local preview immediately — no waiting for upload
     setPendingUri(asset.uri);
     const ext = asset.uri.split('.').pop() || 'jpg';
     try {
@@ -730,6 +725,36 @@ const ImageUploadSection: React.FC<{
       if (url) onImagesChange([...images, url]);
     } catch {}
     setPendingUri(null);
+  };
+
+  const pickFromLibrary = async () => {
+    setSizeError(false);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    await uploadAsset(result.assets[0]);
+  };
+
+  const takeWithCamera = async () => {
+    setSizeError(false);
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    await uploadAsset(result.assets[0]);
+  };
+
+  const handleAddPhoto = () => {
+    if (images.length >= MAX_IMAGES || pendingUri) return;
+    setShowSourceSheet(true);
   };
 
   const allThumbs = [
@@ -767,7 +792,7 @@ const ImageUploadSection: React.FC<{
       )}
       <View style={styles.imageActions}>
         {canAddMore && (
-          <TouchableOpacity style={styles.addPhotoBtn} onPress={pickAndUpload}>
+          <TouchableOpacity style={styles.addPhotoBtn} onPress={handleAddPhoto}>
             <Ionicons name="camera-outline" size={17} color={colors.textSecondary} />
             <Text style={styles.addPhotoBtnText}>Add photo</Text>
           </TouchableOpacity>
@@ -782,6 +807,12 @@ const ImageUploadSection: React.FC<{
           </TouchableOpacity>
         )}
       </View>
+      <ImageSourceSheet
+        visible={showSourceSheet}
+        onCamera={takeWithCamera}
+        onLibrary={pickFromLibrary}
+        onClose={() => setShowSourceSheet(false)}
+      />
     </View>
   );
 };
@@ -1055,19 +1086,37 @@ const ActivityLogStep: React.FC<{
                   <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
                   <Text style={styles.questionText}>?</Text>
                 </View>
-                <View style={styles.hoursOptionsRow}>
-                  {HOURS_OPTIONS.map((opt) => {
-                    const selected = s?.hours === opt.label;
-                    return (
-                      <TouchableOpacity
-                        key={opt.label}
-                        style={[styles.hoursOption, selected && styles.hoursOptionActive]}
-                        onPress={() => { onUpdate(activePhase.id, 'hours', opt.label); handleHoursDone(); }}
-                      >
-                        <Text style={[styles.hoursOptionText, selected && styles.hoursOptionTextActive]}>{opt.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View style={styles.hoursOptionsContainer}>
+                  {/* First row - 3 options */}
+                  <View style={styles.hoursOptionsRow}>
+                    {HOURS_OPTIONS.slice(0, 3).map((opt) => {
+                      const selected = s?.hours === opt.label;
+                      return (
+                        <TouchableOpacity
+                          key={opt.label}
+                          style={[styles.hoursOption, selected && styles.hoursOptionActive]}
+                          onPress={() => { onUpdate(activePhase.id, 'hours', opt.label); handleHoursDone(); }}
+                        >
+                          <Text style={[styles.hoursOptionText, selected && styles.hoursOptionTextActive]}>{opt.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {/* Second row - 2 options */}
+                  <View style={[styles.hoursOptionsRow, styles.hoursOptionsRowSecond]}>
+                    {HOURS_OPTIONS.slice(3).map((opt) => {
+                      const selected = s?.hours === opt.label;
+                      return (
+                        <TouchableOpacity
+                          key={opt.label}
+                          style={[styles.hoursOption, selected && styles.hoursOptionActive]}
+                          onPress={() => { onUpdate(activePhase.id, 'hours', opt.label); handleHoursDone(); }}
+                        >
+                          <Text style={[styles.hoursOptionText, selected && styles.hoursOptionTextActive]}>{opt.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </CompanionBubble>
             )}
@@ -1610,12 +1659,14 @@ const PurityStep: React.FC<{
 
 const MindStep: React.FC<{
   books: Array<{ userBookId: string; title: string; author?: string }>;
-  logState: Record<string, { didUserDo: boolean; description: string; images: string[] }>;
+  logState: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }>;
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
   companion: CompanionDto | null;
   onAddBooks?: () => void;
-}> = ({ books, logState, onUpdate, onUpdateImages, companion, onAddBooks }) => {
+  onActivePhaseChange?: (active: boolean) => void;
+  onPendingChange?: (pending: boolean) => void;
+}> = ({ books, logState, onUpdate, onUpdateImages, companion, onAddBooks, onActivePhaseChange, onPendingChange }) => {
   const alreadyLoggedIds = books.filter((b) => b.userBookId in logState).map((b) => b.userBookId);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     books.find((b) => !(b.userBookId in logState))?.userBookId ?? null
@@ -1637,16 +1688,25 @@ const MindStep: React.FC<{
   const notesBook = notesBookId ? books.find((b) => b.userBookId === notesBookId) : null;
   const imagesBook = imagesBookId ? books.find((b) => b.userBookId === imagesBookId) : null;
 
+  // active = hide Next entirely (yes/no question or reason phase — mandatory interaction)
+  // pending = show but disable Next (notes/images phase — optional but must confirm or skip)
+  const notify = (sid: string | null, nid: string | null, iid: string | null, rid: string | null) => {
+    onActivePhaseChange?.(!!(sid || rid));
+    onPendingChange?.(!!(nid || iid));
+  };
+
   const handleYesNo = (didDo: boolean) => {
     if (!currentForYesNo) return;
     onUpdate(currentForYesNo.userBookId, 'didUserDo', didDo);
     if (didDo) {
       setNotesBookId(currentForYesNo.userBookId);
+      notify(null, currentForYesNo.userBookId, imagesBookId, reasonBookId);
     } else {
       setReasonBookId(currentForYesNo.userBookId);
       setSelectedMindReason('');
       setShowCustomMindReason(false);
       setCustomMindReasonText('');
+      notify(null, notesBookId, imagesBookId, currentForYesNo.userBookId);
     }
     setSelectedId(null);
     setShowDropdown(false);
@@ -1659,8 +1719,10 @@ const MindStep: React.FC<{
 
   const handleNotesDone = () => {
     if (!notesBookId) return;
-    setImagesBookId(notesBookId);
+    const id = notesBookId;
+    setImagesBookId(id);
     setNotesBookId(null);
+    notify(selectedId, null, id, reasonBookId);
   };
 
   const handleMindReasonSelect = (reason: string) => {
@@ -1671,6 +1733,7 @@ const MindStep: React.FC<{
       setConfirmedIds((prev) => [...prev, reasonBookId!]);
       setReasonBookId(null);
       setSelectedMindReason('');
+      notify(selectedId, notesBookId, imagesBookId, null);
     } else {
       setShowCustomMindReason(true);
       setCustomMindReasonText('');
@@ -1685,12 +1748,14 @@ const MindStep: React.FC<{
     setSelectedMindReason('');
     setShowCustomMindReason(false);
     setCustomMindReasonText('');
+    notify(selectedId, notesBookId, imagesBookId, null);
   };
 
   const confirmBook = (id: string) => {
     setConfirmedIds((prev) => [...prev, id]);
     setImagesBookId(null);
     setSelectedId(null);
+    notify(null, notesBookId, null, reasonBookId);
   };
 
   const handleEdit = (id: string) => {
@@ -1703,6 +1768,7 @@ const MindStep: React.FC<{
     if (reasonBookId === id) { setReasonBookId(null); setSelectedMindReason(''); setShowCustomMindReason(false); setCustomMindReasonText(''); }
     setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
     setSelectedId(id);
+    notify(id, notesBookId === id ? null : notesBookId, imagesBookId === id ? null : imagesBookId, reasonBookId === id ? null : reasonBookId);
   };
 
   return (
@@ -2062,11 +2128,18 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
   },
+  hoursOptionsContainer: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
   hoursOptionsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.xs,
     width: '100%',
+  },
+  hoursOptionsRowSecond: {
+    justifyContent: 'center',
+    paddingHorizontal: '8%',
   },
   hoursOption: {
     flex: 1,

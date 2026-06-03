@@ -2,7 +2,7 @@
   "expo": {
     "name": "Elevate",
     "slug": "elevate-frontend",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/elevate-logo.png",
     "userInterfaceStyle": "dark",
@@ -17,9 +17,8 @@
       },
       "package": "com.nexgen.elevate",
       "targetSdkVersion": 35,
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": [],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/elevate-logo.png"
