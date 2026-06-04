@@ -61,6 +61,7 @@ function AppContent() {
       case 'mind_streak_at_risk':
       case 'purity_streak_at_risk':
       case 'activity_reminder':
+      case 'eod_log_reminder':
       case 'inactive_final':
         return StackActions.replace('Main', { screen: 'Home' });
       case 'leaderboard_entered_top3':

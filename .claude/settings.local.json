@@ -31,7 +31,10 @@
       "Bash(adb *)",
       "PowerShell(Get-Process *)",
       "Bash(dir \"C:\\\\Projects\\\\elevate-frontend\\\\node_modules\\\\expo-av\\\\android\\\\build\\\\intermediates\\\\cxx\\\\Debug\\\\3m4u364j\\\\obj\\\\arm64-v8a\\\\\" 2>&1 *)",
-      "Bash(./gradlew.bat app:assembleDebug -x lint -x test --configure-on-demand --no-build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)"
+      "Bash(./gradlew.bat app:assembleDebug -x lint -x test --configure-on-demand --no-build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)",
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-ChildItem C:\\\\Projects\\\\elevate-frontend\\\\android -Recurse -Depth 3 | Where-Object { -not $_.PSIsContainer } | Select-Object -ExpandProperty FullName | Sort-Object)",
+      "PowerShell(node -e \"require\\('./node_modules/@react-native/codegen/lib/generators/TypeUtils/Cxx'\\); console.log\\('ok'\\)\" 2>&1)"
     ]
   }
 }

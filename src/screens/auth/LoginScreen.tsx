@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+// import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import type { AuthStackScreenProps } from '../../navigation/types';
 import { authApi } from '../../api';
 import Input from '../../components/common/Input';
@@ -15,9 +15,9 @@ import { colors, spacing, typography, radius } from '../../theme';
 import { useAlert } from '../../context/AlertContext';
 import { useAuth } from '../../context/AuthContext';
 
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-});
+// GoogleSignin.configure({
+//   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+// });
 
 const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) => {
   const { showAlert } = useAlert();
@@ -25,7 +25,7 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
 
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  // const [googleLoading, setGoogleLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
 
   const validate = () => {
@@ -51,39 +51,39 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    let loggedIn = false;
-    try {
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      const idToken = userInfo.data?.idToken;
-      if (!idToken) {
-        showAlert('Error', 'Could not retrieve Google ID token. Please try again.');
-        return;
-      }
-      const { data } = await authApi.googleLogin(idToken);
-      loggedIn = true;
-      await login(data.accessToken, data.refreshToken, data.user);
-    } catch (err: any) {
-      if (loggedIn) return;
-      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
-        // user cancelled, do nothing
-      } else if (err.code === statusCodes.IN_PROGRESS) {
-        showAlert('Please wait', 'Sign-in is already in progress.');
-      } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        showAlert('Error', 'Google Play Services not available.');
-      } else {
-        console.log('Google sign-in error:', err);
-        console.log('Error response:', err?.response);
-        console.log('Error data:', err?.response?.data);
-        const msg = err?.response?.data?.message || err?.message || 'Google sign-in failed. Please try again.';
-        showAlert('Error', msg);
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
+  // const handleGoogleSignIn = async () => {
+  //   setGoogleLoading(true);
+  //   let loggedIn = false;
+  //   try {
+  //     await GoogleSignin.hasPlayServices();
+  //     const userInfo = await GoogleSignin.signIn();
+  //     const idToken = userInfo.data?.idToken;
+  //     if (!idToken) {
+  //       showAlert('Error', 'Could not retrieve Google ID token. Please try again.');
+  //       return;
+  //     }
+  //     const { data } = await authApi.googleLogin(idToken);
+  //     loggedIn = true;
+  //     await login(data.accessToken, data.refreshToken, data.user);
+  //   } catch (err: any) {
+  //     if (loggedIn) return;
+  //     if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+  //       // user cancelled, do nothing
+  //     } else if (err.code === statusCodes.IN_PROGRESS) {
+  //       showAlert('Please wait', 'Sign-in is already in progress.');
+  //     } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+  //       showAlert('Error', 'Google Play Services not available.');
+  //     } else {
+  //       console.log('Google sign-in error:', err);
+  //       console.log('Error response:', err?.response);
+  //       console.log('Error data:', err?.response?.data);
+  //       const msg = err?.response?.data?.message || err?.message || 'Google sign-in failed. Please try again.';
+  //       showAlert('Error', msg);
+  //     }
+  //   } finally {
+  //     setGoogleLoading(false);
+  //   }
+  // };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -113,28 +113,27 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
               error={emailError}
               returnKeyType="done"
               onSubmitEditing={handleSendOtp}
-              editable={!googleLoading}
+              // editable={!googleLoading}
             />
 
             <Button
               title="Continue"
               onPress={handleSendOtp}
               loading={loading}
-              disabled={googleLoading}
+              // disabled={googleLoading}
               fullWidth
               size="lg"
               variant="light"
               style={styles.continueBtn}
             />
 
-            {/* Divider */}
-            <View style={styles.divider}>
+            {/* Divider + Google Button commented out */}
+            {/* <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Google Button */}
             <TouchableOpacity
               style={[
                 styles.googleButton,
@@ -152,7 +151,7 @@ const LoginScreen: React.FC<AuthStackScreenProps<'Login'>> = ({ navigation }) =>
               <Text style={styles.googleButtonText}>
                 {googleLoading ? 'Signing in…' : 'Continue with Google'}
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
 
           <Text style={styles.disclaimer}>

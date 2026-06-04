@@ -32,7 +32,14 @@
           "cameraPermission": "Allow Elevate to use your camera."
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/elevate-logo.png",
+          "color": "#ffffff",
+          "sounds": ["./assets/notification-bell.wav"]
+        }
+      ],
       [
         "expo-build-properties",
         {
