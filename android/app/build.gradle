@@ -114,7 +114,7 @@ android {
         applicationId 'com.nexgen.elevate'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
+        versionCode 32
         versionName "1.0.4"
     }
     signingConfigs {
