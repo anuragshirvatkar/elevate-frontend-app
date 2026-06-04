@@ -18,7 +18,8 @@
       "package": "com.nexgen.elevate",
       "targetSdkVersion": 35,
       "permissions": [],
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "versionCode": 32
     },
     "web": {
       "favicon": "./assets/elevate-logo.png"
@@ -37,7 +38,9 @@
         {
           "icon": "./assets/elevate-logo.png",
           "color": "#ffffff",
-          "sounds": ["./assets/notification-bell.wav"]
+          "sounds": [
+            "./assets/notification-bell.wav"
+          ]
         }
       ],
       [
