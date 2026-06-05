@@ -12,15 +12,14 @@ import { AlertProvider } from './src/context/AlertContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import NoInternetScreen from './src/components/common/NoInternetScreen';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
-import { RootStackParamList } from './src/navigation/types';
-import { StackActions } from '@react-navigation/native';
+import { CommonActions } from '@react-navigation/native';
 import InAppNotification, { InAppNotificationData } from './src/components/common/InAppNotification';
 
 ExpoSplashScreen.preventAutoHideAsync().catch(() => {});
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: false,
+    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -63,20 +62,20 @@ function AppContent() {
       case 'activity_reminder':
       case 'eod_log_reminder':
       case 'inactive_final':
-        return StackActions.replace('Main', { screen: 'Home' });
+        return CommonActions.navigate({ name: 'Main', params: { screen: 'Tabs', params: { screen: 'HomeTab' } } });
       case 'leaderboard_entered_top3':
       case 'near_top3':
       case 'leaderboard_rank_up':
-        return StackActions.replace('Main', { screen: 'Leaderboard' });
+        return CommonActions.navigate({ name: 'Main', params: { screen: 'Tabs', params: { screen: 'Leaderboard' } } });
       case 'near_unlock_avatar':
-        return StackActions.replace('Main', { screen: 'Profile' });
+        return CommonActions.navigate({ name: 'Main', params: { screen: 'Tabs', params: { screen: 'Profile' } } });
       case 'near_unlock_achievement':
-        return StackActions.replace('Main', { screen: 'Achievements' });
+        return CommonActions.navigate({ name: 'Main', params: { screen: 'Achievements' } });
       case 'milestone_power':
       case 'milestone_mind':
       case 'milestone_craft':
       case 'milestone_purity':
-        return StackActions.replace('Main', { screen: 'Analytics' });
+        return CommonActions.navigate({ name: 'Main', params: { screen: 'Analytics' } });
       default:
         return null;
     }
