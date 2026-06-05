@@ -17,7 +17,9 @@
       },
       "package": "com.nexgen.elevate",
       "targetSdkVersion": 35,
-      "permissions": [],
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "googleServicesFile": "./google-services.json",
       "versionCode": 32
     },
@@ -56,9 +58,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "bb1958d6-83d6-427d-9313-243fc78d9b1d"
+        "projectId": "d5bb338c-2b88-4a31-aa51-69d9408a4b6b"
       }
     },
-    "owner": "nexgensoftwares"
+    "owner": "anuragshirvatkar"
   }
 }

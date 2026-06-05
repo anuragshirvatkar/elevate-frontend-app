@@ -97,7 +97,7 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
         />
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
+            <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
 
           <View style={styles.form}>
@@ -199,8 +199,23 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   form: { gap: spacing.sm, flex: 1, justifyContent: 'flex-start', paddingTop: 90 },
-  backBtn: { marginBottom: spacing.md },
-  backText: { ...typography.body, color: 'rgba(255, 255, 255, 0.5)' },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+    marginBottom: spacing.md,
+  },
+  backText: { ...typography.body, color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textShadowColor: '#FFFFFF', textShadowRadius: 4 },
   title: {
     fontSize: 40,
     fontWeight: '600',

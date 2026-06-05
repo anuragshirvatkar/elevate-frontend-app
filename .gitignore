@@ -3,3 +3,8 @@ node_modules
 .gitignore
 *.jks
 .expo/
+# Android signing key
+*.jks
+*.keystore
+@nexgensoftwares__elevate-frontend.jks
+elevate-5d6f6-firebase-adminsdk-fbsvc-2b9c64f857.json

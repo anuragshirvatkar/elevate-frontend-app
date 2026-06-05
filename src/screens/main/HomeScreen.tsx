@@ -209,7 +209,13 @@ const HomeScreen = () => {
   }, [loading]);
 
   useFocusEffect(useCallback(() => {
-    fetchProfile().catch(() => {});
+    // Reload all data when screen is focused (e.g., after DailyLogModal or JournalScreen)
+    Promise.all([
+      fetchProfile(),
+      loadData(),
+      loadRecords(activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate)
+    ]).catch(() => {});
+
     companionApi.getUnreadMessages().then(({ data }) => {
       const next = data.find((m: CompanionMessage) => !dismissedIds.current.has(m.id));
       if (next && (!notifMessage || notifMessage.id !== next.id)) {
@@ -220,7 +226,7 @@ const HomeScreen = () => {
         }
       }
     }).catch(() => {});
-  }, [loading, notifMessage, showNotif]));
+  }, [loading, notifMessage, showNotif, activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate]));
 
   const dismissNotif = () => {
     Animated.timing(notifSlide, {
@@ -760,7 +766,7 @@ const HomeScreen = () => {
       {/* Daily Log Modal */}
       <DailyLogModal
         visible={showLogModal}
-        onClose={() => setShowLogModal(false)}
+        onClose={() => { setShowLogModal(false); onRefresh(); }}
         onComplete={() => { setShowLogModal(false); onRefresh(); }}
         onNavigateToMind={() => navigation.navigate('Pillars' as never)}
       />

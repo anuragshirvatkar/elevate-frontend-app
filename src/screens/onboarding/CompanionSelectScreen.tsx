@@ -29,6 +29,9 @@ const CompanionSelectScreen: React.FC<
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [scrollViewReady, setScrollViewReady] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
+  const pendingScrollIndex = useRef<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const getCompanionColor = (name: string): string => {
@@ -71,9 +74,7 @@ const CompanionSelectScreen: React.FC<
           );
           if (selectedIndex !== -1) {
             setCurrentIndex(selectedIndex);
-            setTimeout(() => {
-              scrollRef.current?.scrollTo({ x: selectedIndex * screenWidth, animated: false });
-            }, 100);
+            pendingScrollIndex.current = selectedIndex;
           }
         } else if (options.companions.length > 0) {
           setSelected(options.companions[0].id);
@@ -81,7 +82,7 @@ const CompanionSelectScreen: React.FC<
 
         // Skip auto-routing when user intentionally navigated back
         if (route.params?.skipRouting) {
-          setLoading(false);
+          setTimeout(() => setLoading(false), 500);
           return;
         }
 
@@ -127,7 +128,8 @@ const CompanionSelectScreen: React.FC<
           return;
         }
 
-        setLoading(false);
+        // Delay hiding loader to allow images to preload
+        setTimeout(() => setLoading(false), 800);
       } catch (error) {
         console.error('Failed to load data:', error);
         setLoading(false);
@@ -186,7 +188,9 @@ const CompanionSelectScreen: React.FC<
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity onPress={() => navigation.replace('IntroWelcome')} style={styles.backBtn}>
+          <Text style={styles.backText}>←</Text>
+        </TouchableOpacity>
 
         <View style={styles.progressRing}>
           <Svg width={40} height={40} viewBox="0 0 40 40">
@@ -228,6 +232,13 @@ const CompanionSelectScreen: React.FC<
         scrollEventThrottle={16}
         contentContainerStyle={styles.scrollContent}
         style={styles.carousel}
+        onLayout={() => {
+          setScrollViewReady(true);
+          if (pendingScrollIndex.current !== null && screenWidth > 0) {
+            scrollRef.current?.scrollTo({ x: pendingScrollIndex.current * screenWidth, animated: false });
+            pendingScrollIndex.current = null;
+          }
+        }}
       >
         {companions.map((item) => {
           const companionColor = getCompanionColor(item.name);
@@ -249,11 +260,20 @@ const CompanionSelectScreen: React.FC<
                   ]}
                 >
                   {item.image ? (
-                    <Image
-                      source={{ uri: item.image }}
-                      style={styles.companionImage}
-                      resizeMode="contain"
-                    />
+                    <>
+                      {!imageLoaded[item.id] && (
+                        <View style={styles.imageLoader}>
+                          <ActivityIndicator size="large" color={companionColor} />
+                        </View>
+                      )}
+                      <Image
+                        source={{ uri: item.image }}
+                        style={[styles.companionImage, !imageLoaded[item.id] && styles.imageHidden]}
+                        resizeMode="contain"
+                        onLoadEnd={() => setImageLoaded(prev => ({ ...prev, [item.id]: true }))}
+                        onError={() => setImageLoaded(prev => ({ ...prev, [item.id]: true }))}
+                      />
+                    </>
                   ) : (
                     <Text style={styles.emoji}>🏴‍☠️</Text>
                   )}
@@ -340,6 +360,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
   },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  backText: { ...typography.body, color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textShadowColor: '#FFFFFF', textShadowRadius: 4 },
   progressRing: {
     width: 40,
     height: 40,
@@ -401,6 +437,15 @@ const styles = StyleSheet.create({
   companionImage: {
     width: '100%',
     height: '100%',
+  },
+  imageHidden: {
+    opacity: 0,
+  },
+  imageLoader: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
   emoji: {
     fontSize: 100,

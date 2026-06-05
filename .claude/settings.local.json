@@ -34,7 +34,10 @@
       "Bash(./gradlew.bat app:assembleDebug -x lint -x test --configure-on-demand --no-build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)",
       "Bash(Select-Object Name)",
       "PowerShell(Get-ChildItem C:\\\\Projects\\\\elevate-frontend\\\\android -Recurse -Depth 3 | Where-Object { -not $_.PSIsContainer } | Select-Object -ExpandProperty FullName | Sort-Object)",
-      "PowerShell(node -e \"require\\('./node_modules/@react-native/codegen/lib/generators/TypeUtils/Cxx'\\); console.log\\('ok'\\)\" 2>&1)"
+      "PowerShell(node -e \"require\\('./node_modules/@react-native/codegen/lib/generators/TypeUtils/Cxx'\\); console.log\\('ok'\\)\" 2>&1)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

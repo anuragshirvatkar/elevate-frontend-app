@@ -20,7 +20,7 @@ async function registerForPushNotifications(): Promise<string | null> {
   const projectId: string =
     Constants.easConfig?.projectId ??
     Constants.expoConfig?.extra?.eas?.projectId ??
-    'bb1958d6-83d6-427d-9313-243fc78d9b1d';
+    'd5bb338c-2b88-4a31-aa51-69d9408a4b6b';
 
   const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   return token;
