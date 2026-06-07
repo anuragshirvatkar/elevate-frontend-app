@@ -1,11 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Image, Linking, Modal,
+  RefreshControl, ActivityIndicator, Image, Linking, Modal, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const AVATAR_CARD_W = Math.floor((SCREEN_WIDTH - 32 * 2 - 12) / 2.5);
+
+const AVATAR_ACTIVITY: Record<string, string> = {
+  renji: 'Craft', verin: 'Reading', aelius: 'Workout', kael: 'Purity',
+};
+
+const formatUnlockReq = (name: string, req: any): string => {
+  if (!req || typeof req !== 'object') return req ? String(req) : '';
+  const { weeks, days_per_week, min_streak_days, max_relapses_per_month } = req as any;
+  if (min_streak_days !== undefined) {
+    const clause = max_relapses_per_month !== undefined
+      ? ` with ≤${max_relapses_per_month} relapse${max_relapses_per_month !== 1 ? 's' : ''}/mo`
+      : '';
+    return `Stay clean ≥${min_streak_days} days${clause}`;
+  }
+  const activity = AVATAR_ACTIVITY[name?.toLowerCase()] ?? 'activity';
+  return `${activity}: ${days_per_week ?? '?'}d/wk for ${weeks ?? '?'} wk${Number(weeks) !== 1 ? 's' : ''}`;
+};
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { profileApi } from '../../api';
@@ -65,7 +86,11 @@ const ProfileScreen = () => {
     );
   };
 
-  useEffect(() => { if (!profile) fetchProfile(); }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [fetchProfile])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -141,13 +166,8 @@ const ProfileScreen = () => {
 
         {/* ── Social ── */}
         <View style={styles.socialSection}>
-          {socialLinks.length === 0 ? (
-            <TouchableOpacity style={styles.addSocialBtn} activeOpacity={0.7} onPress={() => navigation.navigate('EditProfile')}>
-              <Ionicons name="add-circle-outline" size={16} color={colors.textMuted} />
-              <Text style={styles.addSocialText}>Add social media</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.socialRow}>
+          {socialLinks.length > 0 && (
+            <View style={[styles.socialRow, { marginBottom: 10 }]}>
               {socialLinks.map((link, i) => (
                 <TouchableOpacity key={i} style={styles.socialChip} onPress={() => Linking.openURL(link.url)} activeOpacity={0.7}>
                   <Ionicons name={(PLATFORM_ICONS[link.platform.toLowerCase()] || 'link-outline') as any} size={15} color={colors.text} />
@@ -156,59 +176,118 @@ const ProfileScreen = () => {
               ))}
             </View>
           )}
+          <TouchableOpacity style={styles.addSocialBtn} activeOpacity={0.7} onPress={() => navigation.navigate('EditProfile')}>
+            <Ionicons name="add-circle-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.addSocialText}>Add social media</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.divider} />
 
         {/* ── Avatar ── */}
-        {selectedAvatar ? (
+        {(profile?.avatars?.length ?? 0) > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Avatar</Text>
-            <View style={styles.avatarCardRow}>
-              {/* Full body */}
-              <View style={styles.avatarBodyWrap}>
-                {selectedAvatar.fullBodyImageUrl ? (
-                  <Image source={{ uri: selectedAvatar.fullBodyImageUrl }} style={styles.avatarFullBody} resizeMode="cover" />
-                ) : (
-                  <View style={styles.avatarBodyPlaceholder}>
-                    <Ionicons name="person" size={44} color="#333" />
-                  </View>
-                )}
-                {selectedAvatar.profileImageUrl && (
-                  <View style={styles.avatarPicOverlay}>
-                    <Image source={{ uri: selectedAvatar.profileImageUrl }} style={styles.avatarPicSmall} />
-                  </View>
-                )}
+            <Text style={[styles.sectionTitle, { marginBottom: spacing.md }]}>Avatars</Text>
+
+            {/* Selected avatar detail card */}
+            {selectedAvatar ? (
+              <View style={[styles.avatarCardRow, { marginBottom: spacing.lg }]}>
+                <View style={styles.avatarBodyWrap}>
+                  {selectedAvatar.fullBodyImageUrl ? (
+                    <Image source={{ uri: selectedAvatar.fullBodyImageUrl }} style={styles.avatarFullBody} resizeMode="cover" />
+                  ) : (
+                    <View style={styles.avatarBodyPlaceholder}>
+                      <Ionicons name="person" size={44} color="#333" />
+                    </View>
+                  )}
+                  {selectedAvatar.profileImageUrl && (
+                    <View style={styles.avatarPicOverlay}>
+                      <Image source={{ uri: selectedAvatar.profileImageUrl }} style={styles.avatarPicSmall} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.avatarInfo}>
+                  <Text style={styles.avatarName}>{selectedAvatar.name}</Text>
+                  {selectedAvatar.title ? <Text style={styles.avatarTitle}>{selectedAvatar.title}</Text> : null}
+                  {selectedAvatar.story ? (
+                    <>
+                      <Text style={styles.avatarStory} numberOfLines={4}>{selectedAvatar.story}</Text>
+                      <TouchableOpacity
+                        onPress={() => setStoryModal({ name: selectedAvatar.name, story: selectedAvatar.story!, fullBodyImageUrl: selectedAvatar.fullBodyImageUrl, profileImageUrl: selectedAvatar.profileImageUrl })}
+                        activeOpacity={0.7}
+                        style={styles.viewMoreBtn}
+                      >
+                        <Text style={styles.viewMoreText}>View more</Text>
+                        <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    </>
+                  ) : null}
+                  {selectedAvatar.lastReason && (
+                    <View style={styles.unlockBadge}>
+                      <Ionicons name="lock-open-outline" size={10} color="#3DFF86" />
+                      <Text style={styles.unlockBadgeText}>{selectedAvatar.lastReason}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-              {/* Story */}
-              <View style={styles.avatarInfo}>
-                <Text style={styles.avatarName}>{selectedAvatar.name}</Text>
-                {selectedAvatar.title ? <Text style={styles.avatarTitle}>{selectedAvatar.title}</Text> : null}
-                {selectedAvatar.story ? (
-                  <>
-                    <Text style={styles.avatarStory} numberOfLines={4}>{selectedAvatar.story}</Text>
-                    <TouchableOpacity
-                      onPress={() => setStoryModal({ name: selectedAvatar.name, story: selectedAvatar.story!, fullBodyImageUrl: selectedAvatar.fullBodyImageUrl, profileImageUrl: selectedAvatar.profileImageUrl })}
-                      activeOpacity={0.7}
-                      style={styles.viewMoreBtn}
-                    >
-                      <Text style={styles.viewMoreText}>View more</Text>
-                      <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  </>
-                ) : null}
-                {selectedAvatar.lastReason && (
-                  <View style={styles.unlockBadge}>
-                    <Ionicons name="lock-open-outline" size={10} color="#3DFF86" />
-                    <Text style={styles.unlockBadgeText}>{selectedAvatar.lastReason}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
+            ) : null}
+
+            {/* All avatars carousel (locked + unlocked) */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: spacing.lg }}>
+              {(profile?.avatars ?? []).map((av) => {
+                const isLocked = !av.isUnlocked;
+                const isSelected = av.isSelected;
+                const unlockText = isLocked && av.unlockRequirement
+                  ? formatUnlockReq(av.name, av.unlockRequirement)
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={av.id}
+                    style={[styles.avCarouselCard, isSelected && styles.avCarouselCardSelected, { width: AVATAR_CARD_W }]}
+                    activeOpacity={0.75}
+                    onPress={() => navigation.navigate('EditProfile', { scrollToSection: 'avatar' })}
+                  >
+                    <View style={[styles.avCarouselImgWrap, { width: AVATAR_CARD_W }]}>
+                      {av.fullBodyImageUrl ? (
+                        <Image
+                          source={{ uri: av.fullBodyImageUrl }}
+                          style={[styles.avCarouselImg, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.avCarouselImgPlaceholder, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}>
+                          <Ionicons name="person" size={36} color={isLocked ? '#333' : '#555'} />
+                        </View>
+                      )}
+                      {unlockText ? (
+                        <View style={styles.avUnlockCapsule}>
+                          <Ionicons name="lock-closed" size={8} color="#ccc" />
+                          <Text style={styles.avUnlockCapsuleText} numberOfLines={2}>{unlockText}</Text>
+                        </View>
+                      ) : null}
+                      {isLocked && (
+                        <View style={styles.avLockOverlay}>
+                          <Ionicons name="lock-closed" size={22} color="#aaa" />
+                        </View>
+                      )}
+                      {isSelected && (
+                        <View style={styles.avSelectedBadge}>
+                          <Ionicons name="checkmark" size={12} color="#000" />
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.avCarouselInfo}>
+                      <Text style={[styles.avCarouselName, isLocked && { color: '#444' }]} numberOfLines={1}>{av.name}</Text>
+                      {av.title ? <Text style={styles.avCarouselTitle} numberOfLines={1}>{av.title}</Text> : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         ) : null}
 
-        {selectedAvatar ? <View style={styles.divider} /> : null}
+        {(profile?.avatars?.length ?? 0) > 0 ? <View style={styles.divider} /> : null}
 
         {/* ── Companion ── */}
         {activeCompanion ? (
@@ -474,6 +553,40 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
+
+  // Avatar carousel (all avatars)
+  avCarouselCard: {
+    borderRadius: 12, borderWidth: 1, borderColor: '#1e1e1e',
+    backgroundColor: '#0a0a0a', overflow: 'hidden',
+  },
+  avCarouselCardSelected: { borderColor: colors.text },
+  avCarouselImgWrap: { position: 'relative', overflow: 'hidden' },
+  avCarouselImg: { height: 130, borderRadius: 0 },
+  avCarouselImgPlaceholder: {
+    height: 130, backgroundColor: '#111',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dimmed: { opacity: 0.35 },
+  avLockOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  avUnlockCapsule: {
+    position: 'absolute', bottom: 6, left: 6, right: 6,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 4,
+  },
+  avUnlockCapsuleText: { color: '#ccc', fontSize: 9, flex: 1, lineHeight: 13 },
+  avSelectedBadge: {
+    position: 'absolute', top: 6, right: 6,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: colors.text, alignItems: 'center', justifyContent: 'center',
+  },
+  avCarouselInfo: { paddingHorizontal: 8, paddingVertical: 7 },
+  avCarouselName: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  avCarouselTitle: { color: colors.textMuted, fontSize: 10, marginTop: 1 },
 
   // Story modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'flex-end' },

@@ -36,9 +36,14 @@ const CompanionMessagesScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const markedReadIds = useRef<Set<string>>(new Set());
 
-  const companionImageUrl: string | undefined =
-    (profile?.companions?.[0] as any)?.imageUrl ||
-    (profile?.companions?.[0] as any)?.image;
+  const getCompanionImage = (item: CompanionMessage): string | undefined => {
+    // Prefer image baked into the message at creation time (all new messages)
+    const fromMeta = (item.metadata as any)?.companionImageUrl as string | undefined;
+    if (fromMeta) return fromMeta;
+    // Fallback: match by name for old messages (profile returns all companions, not just active)
+    const byName = profile?.companions?.find((c: any) => c.name === item.companionName);
+    return (byName as any)?.imageUrl ?? (byName as any)?.image;
+  };
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +82,7 @@ const CompanionMessagesScreen = () => {
   const renderItem = ({ item }: { item: CompanionMessage }) => {
     const imageUrl = (item.metadata as any)?.imageUrl as string | undefined;
     const isIconType = ICON_TYPES.includes(item.type);
+    const companionImageUrl = getCompanionImage(item);
 
     return (
       <View style={[styles.row, !item.isRead && styles.rowUnread]}>

@@ -115,6 +115,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [hasActivePhase, setHasActivePhase] = useState(false);
   const [hasPendingInput, setHasPendingInput] = useState(false);
   const [purityComplete, setPurityComplete] = useState(false);
+  const [hadPurityLog, setHadPurityLog] = useState(false);
   const [pointsPopup, setPointsPopup] = useState<{ points: number; nextStep: Step; msgIdx: number } | null>(null);
   const usedMsgIndices = React.useRef<number[]>([]);
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
@@ -133,6 +134,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       setHasActivePhase(false);
       setHasPendingInput(false);
       setPurityComplete(false);
+      setHadPurityLog(false);
       setCompletedSections(new Set());
       setPrefillLocked(false);
       loadSetup(date, initialSection as Step | undefined);
@@ -227,7 +229,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       (['power', 'craft', 'purity', 'mind'] as const).forEach((s) => { if (loggedSections.has(s)) completedFromLogs.add(s); });
       if (!isMindActive) completedFromLogs.delete('mind');
       setCompletedSections(completedFromLogs);
-      if (hasPurityLog) setPurityComplete(true);
+      if (hasPurityLog) { setPurityComplete(true); setHadPurityLog(true); }
       if (overrideSection) {
         setPrefillLocked(true);
         setStep(overrideSection);
@@ -558,7 +560,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   onUpdate={updatePurity}
                   companion={companion}
                   onCompleteChange={setPurityComplete}
-                  initialConfirmed={purityComplete}
+                  initialConfirmed={hadPurityLog}
                 />
               )}
               {step === 'mind' && (
@@ -985,23 +987,34 @@ const ActivityLogStep: React.FC<{
     setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
     setDonePhases([]);
     if (phase === 'yesno') {
-      onRemoveActivity(id);
       setActivePhase(null);
       setCurrentId(id);
     } else if (phase === 'hours') {
-      onUpdate(id, 'hours', '');
+      // Don't clear hours — chip highlights via s?.hours === opt.label
       setDonePhases(['yesno']);
       setActivePhase({ id, phase: 'hours' });
     } else if (phase === 'notes') {
       setDonePhases(['yesno', 'hours']);
       setActivePhase({ id, phase: 'notes' });
     } else if (phase === 'reason') {
-      onUpdate(id, 'reasonIfNo', '');
+      // Don't clear reason — pre-select from existing logState
+      const existingReason = logState[id]?.reasonIfNo || '';
+      const isPredefined = NO_REASON_OPTIONS.filter((r) => r !== 'Other').includes(existingReason);
       setDonePhases(['yesno']);
       setActivePhase({ id, phase: 'reason' });
-      setSelectedReason('');
-      setShowCustomReason(false);
-      setCustomReasonText('');
+      if (isPredefined) {
+        setSelectedReason(existingReason);
+        setShowCustomReason(false);
+        setCustomReasonText('');
+      } else if (existingReason) {
+        setSelectedReason('Other');
+        setShowCustomReason(true);
+        setCustomReasonText(existingReason);
+      } else {
+        setSelectedReason('');
+        setShowCustomReason(false);
+        setCustomReasonText('');
+      }
     } else {
       setDonePhases(['yesno', 'hours', 'notes']);
       setActivePhase({ id, phase: 'images' });
@@ -1050,6 +1063,18 @@ const ActivityLogStep: React.FC<{
           </React.Fragment>
         );
       })}
+
+      {/* Add second activity button — shown after first is confirmed, if more are available (max 2) */}
+      {confirmedIds.length > 0 && confirmedIds.length < 2 && pickableActivities.length > 0 && !activePhase && currentId === null && (
+        <TouchableOpacity
+          style={styles.addSecondBtn}
+          onPress={() => setCurrentId(pickableActivities[0].activityId)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add-circle-outline" size={16} color="#555" />
+          <Text style={styles.addSecondBtnText}>Add second activity</Text>
+        </TouchableOpacity>
+      )}
 
       {/* In-progress activity: show answered phases as list rows, then the active question */}
       {activePhase && phaseActivity && (() => {
@@ -1283,14 +1308,19 @@ const ActivityLogStep: React.FC<{
             </View>
           )}
 
-          <View style={styles.yesNo}>
-            <TouchableOpacity style={styles.yesBtn} onPress={() => handleYesNo(true)}>
-              <Text style={styles.yesNoText}>Yes</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.noBtn} onPress={() => handleYesNo(false)}>
-              <Text style={styles.yesNoText}>No</Text>
-            </TouchableOpacity>
-          </View>
+          {(() => {
+            const preselected = currentId ? logState[currentId]?.didUserDo : undefined;
+            return (
+              <View style={styles.yesNo}>
+                <TouchableOpacity style={[styles.yesBtn, preselected === true && styles.yesBtnActive]} onPress={() => handleYesNo(true)}>
+                  <Text style={[styles.yesNoText, preselected === true && styles.yesNoTextActive]}>Yes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.noBtn, preselected === false && styles.noBtnActive]} onPress={() => handleYesNo(false)}>
+                  <Text style={styles.yesNoText}>No</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
         </CompanionBubble>
       )}
 
@@ -1475,47 +1505,70 @@ const PurityStep: React.FC<{
 }> = ({ state, onUpdate, companion, onCompleteChange, initialConfirmed }) => {
   const [showHelp, setShowHelp] = React.useState(false);
 
+  // null = user hasn't made a choice this session (fall back to pre-existing props)
+  const [sessionChoice, setSessionChoice] = useState<null | 'clean' | 'relapsed'>(null);
+  // null = user hasn't changed the cause this session (fall back to state.reasonIfNo)
+  const [sessionCause, setSessionCause] = useState<null | string>(null);
+  // true after user taps the tweet card to edit (overrides initialConfirmed for showing tweet)
+  const [editingMode, setEditingMode] = useState(false);
+  // true after user completes their choice in this session
+  const [sessionConfirmed, setSessionConfirmed] = useState(false);
+
+  // Reset session state whenever the modal re-opens (initialConfirmed resets to false)
+  useEffect(() => {
+    if (!initialConfirmed) {
+      setSessionChoice(null);
+      setSessionCause(null);
+      setEditingMode(false);
+      setSessionConfirmed(false);
+    }
+  }, [initialConfirmed]);
+
+  // Derived values — always computed from session overrides OR incoming props
+  const activeMode: 'question' | 'clean' | 'relapsed' =
+    sessionChoice !== null ? sessionChoice
+    : initialConfirmed ? (parseInt(state.relapseCount || '0', 10) > 0 ? 'relapsed' : 'clean')
+    : 'question';
+
+  const activeCause = sessionCause !== null ? sessionCause : (state.reasonIfNo || '');
+  const showTweet = (sessionConfirmed || !!initialConfirmed) && !editingMode;
+  const count = parseInt(state.relapseCount || '0', 10);
+
+  const tweetStatus = activeMode === 'clean'
+    ? 'Clean ✓'
+    : `Relapsed × ${count}${state.reasonIfNo ? ` · ${state.reasonIfNo}` : ''}`;
+
   const handleHelp = async () => {
     try { await helpApi.trigger(); } catch {}
     setShowHelp(true);
-  };
-  const [mode, setMode] = useState<'question' | 'clean' | 'relapsed'>(() => {
-    if (!initialConfirmed) return 'question';
-    return parseInt(state.relapseCount || '0', 10) === 0 ? 'clean' : 'relapsed';
-  });
-  const [selectedCause, setSelectedCause] = useState(() =>
-    initialConfirmed && state.reasonIfNo ? state.reasonIfNo : ''
-  );
-  const [confirmed, setConfirmed] = useState(initialConfirmed ?? false);
-
-  const count = parseInt(state.relapseCount || '0', 10);
-
-  const confirm = (clean: boolean) => {
-    setConfirmed(true);
-    onCompleteChange?.(true);
-    if (clean) onCompleteChange?.(true);
   };
 
   const handleClean = () => {
     onUpdate('relapseCount', '0');
     onUpdate('reasonIfNo', '');
-    setMode('clean');
-    setConfirmed(true);
+    setSessionChoice('clean');
+    setSessionCause(null);
+    setSessionConfirmed(true);
+    setEditingMode(false);
     onCompleteChange?.(true);
   };
 
   const handleRelapsed = () => {
-    onUpdate('relapseCount', '0');
-    onUpdate('reasonIfNo', '');
-    setSelectedCause('');
-    setMode('relapsed');
+    if (activeMode !== 'relapsed') {
+      // Only reset count/reason when switching away from relapsed
+      onUpdate('relapseCount', '0');
+      onUpdate('reasonIfNo', '');
+      setSessionCause('');
+    }
+    setSessionChoice('relapsed');
   };
 
   const handleCauseSelect = (cause: string) => {
-    setSelectedCause(cause);
+    setSessionCause(cause);
     if (cause !== 'Other') {
       onUpdate('reasonIfNo', cause);
-      setConfirmed(true);
+      setSessionConfirmed(true);
+      setEditingMode(false);
       onCompleteChange?.(true);
     } else {
       onUpdate('reasonIfNo', '');
@@ -1524,28 +1577,22 @@ const PurityStep: React.FC<{
 
   const handleOtherConfirm = () => {
     if (!state.reasonIfNo.trim()) return;
-    setConfirmed(true);
+    setSessionConfirmed(true);
+    setEditingMode(false);
     onCompleteChange?.(true);
   };
 
   const handleEdit = () => {
-    setConfirmed(false);
-    setSelectedCause('');
-    setMode('question');
-    onUpdate('relapseCount', '0');
-    onUpdate('reasonIfNo', '');
+    setEditingMode(true);
+    setSessionConfirmed(false);
     onCompleteChange?.(false);
   };
-
-  const tweetStatus = mode === 'clean'
-    ? 'Clean ✓'
-    : `Relapsed × ${count}${state.reasonIfNo ? ` · ${state.reasonIfNo}` : ''}`;
 
   return (
     <View style={styles.stepContent}>
       <HelpCarousel visible={showHelp} onClose={() => setShowHelp(false)} />
 
-      {confirmed && (
+      {showTweet && (
         <TouchableOpacity activeOpacity={0.7} onPress={handleEdit}>
           <TweetSummary
             companion={companion}
@@ -1557,7 +1604,7 @@ const PurityStep: React.FC<{
         </TouchableOpacity>
       )}
 
-      {!confirmed && (
+      {!showTweet && (
         <>
           <TouchableOpacity
             style={[styles.finishedBookBtn, { marginTop: 5 }]}
@@ -1575,22 +1622,22 @@ const PurityStep: React.FC<{
 
           <View style={styles.yesNo}>
             <TouchableOpacity
-              style={[styles.yesBtn, mode === 'clean' && styles.yesBtnActive]}
+              style={[styles.yesBtn, activeMode === 'clean' && styles.yesBtnActive]}
               onPress={handleClean}
             >
-              <Text style={[styles.yesNoText, mode === 'clean' && styles.yesNoTextActive]}>
+              <Text style={[styles.yesNoText, activeMode === 'clean' && styles.yesNoTextActive]}>
                 ✓ Clean
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.noBtn, mode === 'relapsed' && styles.noBtnActive]}
+              style={[styles.noBtn, activeMode === 'relapsed' && styles.noBtnActive]}
               onPress={handleRelapsed}
             >
               <Text style={styles.yesNoText}>Relapsed</Text>
             </TouchableOpacity>
           </View>
 
-          {mode === 'relapsed' && (
+          {activeMode === 'relapsed' && (
             <View style={styles.hoursWrap}>
               {/* Step 1: How many times */}
               <View style={styles.relapseCountRow}>
@@ -1614,17 +1661,17 @@ const PurityStep: React.FC<{
                     {RELAPSE_CAUSES.map((cause) => (
                       <TouchableOpacity
                         key={cause}
-                        style={[styles.relapseCauseChip, selectedCause === cause && styles.relapseCauseChipActive]}
+                        style={[styles.relapseCauseChip, activeCause === cause && styles.relapseCauseChipActive]}
                         onPress={() => handleCauseSelect(cause)}
                       >
-                        <Text style={[styles.relapseCauseText, selectedCause === cause && styles.relapseCauseTextActive]}>
+                        <Text style={[styles.relapseCauseText, activeCause === cause && styles.relapseCauseTextActive]}>
                           {cause}
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
 
-                  {selectedCause === 'Other' && (
+                  {activeCause === 'Other' && (
                     <View style={styles.inputWithTick}>
                       <TextInput
                         style={[styles.hoursInput, styles.hoursInputPad]}
@@ -1759,10 +1806,6 @@ const MindStep: React.FC<{
   };
 
   const handleEdit = (id: string) => {
-    onUpdate(id, 'didUserDo', false);
-    onUpdate(id, 'description', '');
-    onUpdateImages(id, []);
-    onUpdate(id, 'reasonIfNo', '');
     if (notesBookId === id) setNotesBookId(null);
     if (imagesBookId === id) setImagesBookId(null);
     if (reasonBookId === id) { setReasonBookId(null); setSelectedMindReason(''); setShowCustomMindReason(false); setCustomMindReasonText(''); }
@@ -1921,14 +1964,19 @@ const MindStep: React.FC<{
             </View>
           )}
 
-          <View style={styles.yesNo}>
-            <TouchableOpacity style={styles.yesBtn} onPress={() => handleYesNo(true)}>
-              <Text style={styles.yesNoText}>Yes</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.noBtn} onPress={() => handleYesNo(false)}>
-              <Text style={styles.yesNoText}>No</Text>
-            </TouchableOpacity>
-          </View>
+          {(() => {
+            const preselected = selectedId ? logState[selectedId]?.didUserDo : undefined;
+            return (
+              <View style={styles.yesNo}>
+                <TouchableOpacity style={[styles.yesBtn, preselected === true && styles.yesBtnActive]} onPress={() => handleYesNo(true)}>
+                  <Text style={[styles.yesNoText, preselected === true && styles.yesNoTextActive]}>Yes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.noBtn, preselected === false && styles.noBtnActive]} onPress={() => handleYesNo(false)}>
+                  <Text style={styles.yesNoText}>No</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
         </CompanionBubble>
         </>
       )}
@@ -2171,6 +2219,18 @@ const styles = StyleSheet.create({
   skipBtnText: { ...typography.bodySmall, color: colors.textSecondary },
   imageDoneTickBtn: { paddingHorizontal: spacing.sm },
   descInput: { minHeight: 60, textAlignVertical: 'top' },
+  addSecondBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 12, paddingHorizontal: spacing.sm,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  addSecondBtnText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1 },
+  bonusBadge: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    backgroundColor: '#0d2200', borderWidth: 1, borderColor: '#1a3d00',
+  },
+  bonusBadgeText: { fontSize: 11, fontWeight: '700', color: colors.success },
   relapseCountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   relapseLabel: { ...typography.body, color: colors.textSecondary },
   relapseCounter: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },

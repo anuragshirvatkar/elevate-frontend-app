@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { Platform, View, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -17,13 +18,50 @@ import InAppNotification, { InAppNotificationData } from './src/components/commo
 
 ExpoSplashScreen.preventAutoHideAsync().catch(() => {});
 
+// When the app is visually in the foreground, suppress the OS banner and show
+// our custom card instead. When backgrounded (JS bridge still alive but user
+// is on another app), let the OS show the real heads-up banner.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async () => {
+    const isForegrounded = AppState.currentState === 'active';
+    return {
+      shouldShowAlert: !isForegrounded,
+      shouldPlaySound: !isForegrounded,
+      shouldSetBadge: false,
+    };
+  },
 });
+
+// Android: create/override the default channel with HIGH importance so push
+// notifications appear as heads-up cards (slide in from top) when the user
+// is using another app. 'default' is the channel Expo uses when no channelId
+// is specified in the push payload. Must run before any notification arrives.
+// Android locks a channel's importance after its first creation — calling
+// setNotificationChannelAsync again with a higher importance is silently
+// ignored. If 'elevate' was ever created at a lower importance (e.g. during
+// an earlier build), heads-up banners stop working and there is no way to
+// upgrade it in code. To guarantee a fresh MAX-importance channel we use a
+// versioned id and delete the stale one. IMPORTANT: the backend push payload
+// must send channelId: 'elevate_v2' to match this channel.
+const ANDROID_CHANNEL_ID = 'elevate_v2';
+if (Platform.OS === 'android') {
+  (async () => {
+    try {
+      await Notifications.deleteNotificationChannelAsync('elevate');
+    } catch {}
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+      name: 'Elevate',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'notification-bell.wav',
+      vibrationPattern: [0, 150, 100, 150],
+      enableLights: true,
+      lightColor: '#FFFFFF',
+      enableVibrate: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+  })();
+}
 
 function AppContent() {
   const { isConnected } = useNetwork();
@@ -32,25 +70,6 @@ function AppContent() {
   const [inAppNotif, setInAppNotif] = useState<InAppNotificationData | null>(null);
   const pendingActionRef = useRef<(() => void) | null>(null);
   usePushNotifications(isAuthenticated);
-
-
-  // Show in-app notification card for foreground notifications
-  useEffect(() => {
-    const sub = Notifications.addNotificationReceivedListener(notification => {
-      const { title, body, data } = notification.request.content;
-      if (!title) return;
-      const companionImageUrl = (data?.companionImageUrl as string) ?? undefined;
-      setInAppNotif({ title, body: body ?? '', companionImageUrl });
-      const type = data?.type as string | undefined;
-      if (type) {
-        pendingActionRef.current = () => {
-          const action = getNavigationAction(type);
-          if (action && navigationRef.current) navigationRef.current.dispatch(action);
-        };
-      }
-    });
-    return () => sub.remove();
-  }, []);
 
   const getNavigationAction = (type: string) => {
     switch (type) {
@@ -81,17 +100,65 @@ function AppContent() {
     }
   };
 
-  // Handle notification response
-  React.useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const notificationData = response.notification.request.content.data;
-      const type = notificationData?.type;
-      if (!type || !navigationRef.current) return;
-      const action = getNavigationAction(type);
-      if (action) navigationRef.current.dispatch(action);
+  const showCard = (title: string, body: string, data: Record<string, unknown>) => {
+    const companionImageUrl = (data?.companionImageUrl as string) ?? undefined;
+    setInAppNotif({ title, body, companionImageUrl });
+    const type = data?.type as string | undefined;
+    if (type) {
+      pendingActionRef.current = () => {
+        const action = getNavigationAction(type);
+        if (action && navigationRef.current) navigationRef.current.dispatch(action);
+      };
+    }
+  };
+
+  // CASE 1: App in foreground — listener fires directly
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener(notification => {
+      const { title, body, data } = notification.request.content;
+      if (!title) return;
+      showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // CASE 2: User taps the OS notification (from background or killed state)
+  useEffect(() => {
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (!response) return;
+      const { title, body, data } = response.notification.request.content;
+      if (title) showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
     });
 
-    return () => subscription.remove();
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const { title, body, data } = response.notification.request.content;
+      if (title) showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
+      const type = (data?.type) as string | undefined;
+      if (type && navigationRef.current) {
+        const action = getNavigationAction(type);
+        if (action) navigationRef.current.dispatch(action);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // CASE 3: App returns from background without tapping — try OS tray
+  useEffect(() => {
+    const handleAppStateChange = async (nextState: string) => {
+      if (nextState !== 'active') return;
+      try {
+        const presented = await Notifications.getPresentedNotificationsAsync();
+        if (presented.length === 0) return;
+        const latest = presented[presented.length - 1];
+        const { title, body, data } = latest.request.content;
+        if (!title) return;
+        showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
+        await Notifications.dismissAllNotificationsAsync();
+      } catch {}
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
   }, []);
 
   if (!isConnected) {
@@ -99,15 +166,17 @@ function AppContent() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef}>
-      <StatusBar style="light" backgroundColor="#000000" />
-      <RootNavigator />
+    <View style={{ flex: 1 }}>
+      <NavigationContainer ref={navigationRef}>
+        <StatusBar style="light" backgroundColor="#000000" />
+        <RootNavigator />
+      </NavigationContainer>
       <InAppNotification
         notification={inAppNotif}
         onDismiss={() => setInAppNotif(null)}
         onPress={() => { pendingActionRef.current?.(); pendingActionRef.current = null; }}
       />
-    </NavigationContainer>
+    </View>
   );
 }
 

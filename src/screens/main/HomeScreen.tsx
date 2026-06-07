@@ -113,6 +113,11 @@ const HomeScreen = () => {
   const dismissedIds = useRef<Set<string>>(new Set());
   const pendingNotif = useRef<CompanionMessage | null>(null);
 
+  // Track RecordDetail navigation: skip heavy reload if user only viewed (no edit)
+  const isViewingRecord = useRef(false);
+  const recordWasEdited = useRef(false);
+  const onRecordEdited = useCallback(() => { recordWasEdited.current = true; }, []);
+
   const loadRecords = useCallback(async (days: number = 7, sections: string[] = ['power', 'craft', 'purity', 'mind'], fromDate?: Date | null, toDate?: Date | null) => {
     setIsLoadingRecords(true);
     try {
@@ -123,14 +128,14 @@ const HomeScreen = () => {
         const end = new Date(toDate);
         end.setHours(0, 0, 0, 0);
         while (cur <= end) {
-          dates.push(cur.toISOString().split('T')[0]);
+          dates.push(cur.toLocaleDateString('en-CA'));
           cur.setDate(cur.getDate() + 1);
         }
       } else {
         for (let i = 0; i < days; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
-          dates.push(d.toISOString().split('T')[0]);
+          dates.push(d.toLocaleDateString('en-CA'));
         }
       }
       const results = await Promise.allSettled(dates.map(date => activitiesApi.getLog(date)));
@@ -209,12 +214,19 @@ const HomeScreen = () => {
   }, [loading]);
 
   useFocusEffect(useCallback(() => {
-    // Reload all data when screen is focused (e.g., after DailyLogModal or JournalScreen)
-    Promise.all([
-      fetchProfile(),
-      loadData(),
-      loadRecords(activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate)
-    ]).catch(() => {});
+    const fromRecordView = isViewingRecord.current;
+    const hadEdit = recordWasEdited.current;
+    isViewingRecord.current = false;
+    recordWasEdited.current = false;
+
+    // Skip heavy reload when returning from RecordDetail with no edits made
+    if (!fromRecordView || hadEdit) {
+      Promise.all([
+        fetchProfile(),
+        loadData(),
+        loadRecords(activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate)
+      ]).catch(() => {});
+    }
 
     companionApi.getUnreadMessages().then(({ data }) => {
       const next = data.find((m: CompanionMessage) => !dismissedIds.current.has(m.id));
@@ -266,8 +278,10 @@ const HomeScreen = () => {
   };
 
   const formatRecordDate = (dateStr: string): string => {
-    const today = new Date().toISOString().split('T')[0];
-    const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yest = yesterday.toLocaleDateString('en-CA');
     if (dateStr === today) return 'Today';
     if (dateStr === yest) return 'Yesterday';
     const d = new Date(dateStr + 'T00:00:00');
@@ -281,7 +295,7 @@ const HomeScreen = () => {
       const date = new Date();
       date.setDate(date.getDate() - i);
       days.push({
-        date: date.toISOString().split('T')[0],
+        date: date.toLocaleDateString('en-CA'),
         weekday: weekdays[date.getDay()],
       });
     }
@@ -567,7 +581,10 @@ const HomeScreen = () => {
                             <TouchableOpacity
                               key={sec}
                               style={styles.recordRow}
-                              onPress={() => (navigation as any).navigate('RecordDetail', { date, logs, section: sec })}
+                              onPress={() => {
+                              isViewingRecord.current = true;
+                              (navigation as any).navigate('RecordDetail', { date, logs, section: sec, onEdited: onRecordEdited });
+                            }}
                               activeOpacity={0.7}
                             >
                               <View style={styles.recordRowIcon}>
@@ -610,7 +627,7 @@ const HomeScreen = () => {
           </View>
         )}
         <TouchableOpacity style={styles.fab} onPress={() => { setShowLogModal(true); dismissTooltip(); }} activeOpacity={0.85}>
-          <GrowIcon width={18} height={18} fill={colors.background} />
+          <Ionicons name="add" size={28} color={colors.background} />
         </TouchableOpacity>
       </View>
 

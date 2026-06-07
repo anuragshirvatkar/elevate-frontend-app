@@ -46,6 +46,13 @@ function formatTimeDisplay(timeStr: string): string {
   return `${hh}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
+function timeDiffMinutes(t1: string, t2: string): number {
+  const [h1, m1] = t1.split(':').map(Number);
+  const [h2, m2] = t2.split(':').map(Number);
+  const diff = Math.abs(h1 * 60 + m1 - (h2 * 60 + m2));
+  return Math.min(diff, 1440 - diff);
+}
+
 const ACTIVITY_ICONS: Record<string, string> = {
   'gym': '💪',
   'workout': '💪',
@@ -108,6 +115,8 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
   const [customCreating, setCustomCreating] = useState(false);
   const [powerIntroVisible, setPowerIntroVisible] = useState(false);
   const [customActivityIds, setCustomActivityIds] = useState<Set<string>>(new Set());
+  const [savedCraftTime, setSavedCraftTime] = useState<string>('');
+  const [savedMindTime, setSavedMindTime] = useState<string>('');
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -177,6 +186,9 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
 
           setTimeDate(d);
         }
+
+        setSavedCraftTime(progressData.sections?.craft?.preferredTime ?? '');
+        setSavedMindTime(progressData.sections?.mind?.preferredTime ?? '');
 
         const hasSavedActivities = (power?.activities?.length ?? 0) > 0;
         if (hasSavedActivities) {
@@ -759,8 +771,20 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                   onChange={(event, selectedDate) => {
                     setTimePickerVisible(Platform.OS === 'ios');
                     if (selectedDate) {
+                      const newTime = toTimeString(selectedDate);
+                      const conflicts: string[] = [];
+                      if (savedCraftTime && timeDiffMinutes(newTime, savedCraftTime) < 60) {
+                        conflicts.push(`Craft (${formatTimeDisplay(savedCraftTime)})`);
+                      }
+                      if (savedMindTime && timeDiffMinutes(newTime, savedMindTime) < 60) {
+                        conflicts.push(`Mind (${formatTimeDisplay(savedMindTime)})`);
+                      }
+                      if (conflicts.length > 0) {
+                        showAlert('Time Conflict', `Selected time is within 1 hour of your ${conflicts.join(' and ')} time. Please choose a different time.`);
+                        return;
+                      }
                       setTimeDate(selectedDate);
-                      setPreferredTime(toTimeString(selectedDate));
+                      setPreferredTime(newTime);
                     }
                   }}
                 />

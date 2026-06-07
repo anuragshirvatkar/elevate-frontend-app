@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, Image, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { profileApi } from '../../api';
 import { colors, spacing, typography } from '../../theme';
 import type { Achievement } from '../../types';
@@ -22,9 +22,12 @@ const AchievementsScreen = () => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    profileApi.get().then(({ data }) => setAchievements(data.achievements)).finally(() => setLoading(false));
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      profileApi.get().then(({ data }) => setAchievements(data.achievements)).finally(() => setLoading(false));
+    }, [])
+  );
 
   const unlocked = achievements.filter((a) => a.isUnlocked);
   const sorted = [...unlocked, ...achievements.filter((a) => !a.isUnlocked)];

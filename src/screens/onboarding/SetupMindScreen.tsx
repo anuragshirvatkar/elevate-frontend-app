@@ -55,6 +55,13 @@ function formatTimeDisplay(timeStr: string): string {
   return `${hour12}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
+function timeDiffMinutes(t1: string, t2: string): number {
+  const [h1, m1] = t1.split(':').map(Number);
+  const [h2, m2] = t2.split(':').map(Number);
+  const diff = Math.abs(h1 * 60 + m1 - (h2 * 60 + m2));
+  return Math.min(diff, 1440 - diff);
+}
+
 const getCompanionColor = (name: string): string => {
   const colorMap: { [key: string]: string } = {
     'Captain Blackvein': '#3DFF86',
@@ -86,6 +93,8 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
   const [timeDate, setTimeDate] = useState(new Date());
   const [mindIntroVisible, setMindIntroVisible] = useState(false);
   const [customBookIds, setCustomBookIds] = useState<Set<string>>(new Set());
+  const [savedPowerTime, setSavedPowerTime] = useState<string>('');
+  const [savedCraftTime, setSavedCraftTime] = useState<string>('');
   const bubbleAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -168,6 +177,10 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
 
           setTimeDate(d);
         }
+
+        setSavedPowerTime(progressData.sections?.power?.preferredTime ?? '');
+        setSavedCraftTime(progressData.sections?.craft?.preferredTime ?? '');
+
         const hasSavedBooks = (mind?.books?.length ?? 0) > 0;
         if (hasSavedBooks) {
           setStep(2);
@@ -292,7 +305,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
         sections: {
           mind: {
             skipMind: true,
-            preferredTime: null,
+            preferredTime: undefined,
             restDays: [],
             bookIds: [],
           },
@@ -717,12 +730,23 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                   value={timeDate}
                   mode="time"
                   display={Platform.OS === 'android' ? 'clock' : 'spinner'}
-                  themeVariant="dark"
                   onChange={(event, selectedDate) => {
                     setTimePickerVisible(Platform.OS === 'ios');
                     if (selectedDate) {
+                      const newTime = toTimeString(selectedDate);
+                      const conflicts: string[] = [];
+                      if (savedPowerTime && timeDiffMinutes(newTime, savedPowerTime) < 60) {
+                        conflicts.push(`Power (${formatTimeDisplay(savedPowerTime)})`);
+                      }
+                      if (savedCraftTime && timeDiffMinutes(newTime, savedCraftTime) < 60) {
+                        conflicts.push(`Craft (${formatTimeDisplay(savedCraftTime)})`);
+                      }
+                      if (conflicts.length > 0) {
+                        showAlert('Time Conflict', `Selected time is within 1 hour of your ${conflicts.join(' and ')} time. Please choose a different time.`);
+                        return;
+                      }
                       setTimeDate(selectedDate);
-                      setPreferredTime(toTimeString(selectedDate));
+                      setPreferredTime(newTime);
                     }
                   }}
                 />

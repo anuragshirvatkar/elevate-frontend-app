@@ -16,6 +16,8 @@ const SECTION_COLORS: Record<string, string> = {
   power: colors.power, craft: colors.craft, mind: colors.mind, purity: colors.purity,
 };
 
+const IMAGE_ACHIEVEMENTS = ['Opened the Book', 'Thinking Begins', 'Strong Mind'];
+
 const PLATFORM_ICONS: Record<string, string> = {
   twitter: 'logo-twitter', instagram: 'logo-instagram', linkedin: 'logo-linkedin',
   github: 'logo-github', youtube: 'logo-youtube', facebook: 'logo-facebook',
@@ -222,7 +224,12 @@ const PublicProfileScreen = () => {
                 >
                   <View style={styles.achievementIconWrap}>
                     {a.iconUrl ? (
-                      <Image source={{ uri: a.iconUrl }} style={styles.achievementIconImg} resizeMode="cover" />
+                      <Image
+                        source={{ uri: a.iconUrl }}
+                        style={styles.achievementIconImg}
+                        resizeMode="cover"
+                        tintColor={IMAGE_ACHIEVEMENTS.includes(a.name) ? undefined : '#ffffff'}
+                      />
                     ) : (
                       <Ionicons name="trophy" size={17} color="#fff" />
                     )}

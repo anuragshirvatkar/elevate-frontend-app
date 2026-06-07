@@ -45,7 +45,7 @@ export type DrawerParamList = {
   JournalDetail: { entry?: JournalEntry };
   RecordDetail: { date: string; logs: ActivityLogEntry[]; section?: string };
   EditProfile: { scrollToSection?: string } | undefined;
-  PublicProfile: undefined;
+  PublicProfile: { userId: string; username: string };
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;

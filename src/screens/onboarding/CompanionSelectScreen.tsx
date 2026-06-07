@@ -67,10 +67,11 @@ const CompanionSelectScreen: React.FC<
 
         // Always load the previously selected companion if it exists
         if (progress.selectedCompanion) {
-          setSelected(progress.selectedCompanion.id);
+          const prevSelected = progress.selectedCompanion;
+          setSelected(prevSelected.id);
           // Find the index of the selected companion to scroll to it
           const selectedIndex = options.companions.findIndex(
-            (c) => c.id === progress.selectedCompanion.id
+            (c) => c.id === prevSelected.id
           );
           if (selectedIndex !== -1) {
             setCurrentIndex(selectedIndex);

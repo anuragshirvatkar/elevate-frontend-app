@@ -39,17 +39,21 @@ interface PodiumBoxProps {
   entry?: LeaderboardEntry;
   rank: number;
   isMe: boolean;
+  onPress?: () => void;
 }
 
-const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
+const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe, onPress }) => {
   const color = PODIUM_COLOR[rank];
   const height = PODIUM_HEIGHT[rank];
   const avatarSize = PODIUM_AVATAR[rank];
   const flex = PODIUM_WIDTH[rank];
   const isEmpty = !entry;
+  const pressable = !isEmpty && !isMe && !!onPress;
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={pressable ? 0.75 : 1}
+      onPress={pressable ? onPress : undefined}
       style={[
         styles.podiumBox,
         { height, borderColor: color + '60', flex },
@@ -104,7 +108,7 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe }) => {
       <Text style={[styles.podiumName, { fontSize: rank === 1 ? 13 : 11 }]} numberOfLines={1}>
         {isEmpty ? '—' : entry.name}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -189,15 +193,25 @@ const LeaderboardScreen = () => {
   };
 
   const myUserId = user?.id || '';
+  const podiumEntries = rankings.filter(e => e.rank <= 3);
+  const hasPodiumTies = podiumEntries.length !== new Set(podiumEntries.map(e => e.rank)).size;
   const top3 = [1, 2, 3].map(r => rankings.find(e => e.rank === r));
-  const rest = rankings.filter(e => e.rank > 3);
+  const rest = hasPodiumTies
+    ? rankings.filter(e => e.userId !== myUserId)
+    : rankings.filter(e => e.rank > 3 && e.userId !== myUserId);
 
   const renderRow = ({ item }: { item: LeaderboardEntry }) => {
     const isMe = item.userId === myUserId;
+    const tieRankColor = hasPodiumTies && item.rank >= 1 && item.rank <= 3 ? PODIUM_COLOR[item.rank] : undefined;
     return (
-      <View style={[styles.row, isMe && styles.rowMe]}>
-        <View style={styles.rankBadge}>
-          <Text style={styles.rankBadgeText}>#{item.rank}</Text>
+      <TouchableOpacity
+        style={[styles.row, isMe && styles.rowMe]}
+        activeOpacity={isMe ? 1 : 0.7}
+        disabled={isMe}
+        onPress={isMe ? undefined : () => navigation.navigate('PublicProfile', { userId: item.userId, username: item.name })}
+      >
+        <View style={[styles.rankBadge, tieRankColor ? { backgroundColor: tieRankColor } : null]}>
+          <Text style={[styles.rankBadgeText, tieRankColor ? { color: '#000' } : null]}>#{item.rank}</Text>
         </View>
         <View style={[styles.rowAvatar, isMe && styles.rowAvatarMe]}>
           {item.profileImageUrl ? (
@@ -215,11 +229,11 @@ const LeaderboardScreen = () => {
         <Text style={[styles.rowPoints, isMe && styles.rowPointsMe]}>
           {item.points.toLocaleString()} pts
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
-  const myEntry = myRank && myRank.rank > 3
+  const myEntry = myRank && (hasPodiumTies || myRank.rank > 3)
     ? rankings.find(e => e.userId === myUserId) || { userId: myUserId, name: 'You', rank: myRank.rank, points: myRank.points }
     : null;
 
@@ -245,18 +259,27 @@ const LeaderboardScreen = () => {
           contentContainerStyle={rankings.length === 0 ? styles.emptyContainer : undefined}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
           ListHeaderComponent={
-            rankings.length > 0 ? (
+            rankings.length > 0 && !hasPodiumTies ? (
               <>
                 {/* Podium */}
                 <View style={styles.podiumRow}>
-                  {[2, 1, 3].map(rank => (
-                    <PodiumBox
-                      key={rank}
-                      rank={rank}
-                      entry={top3[rank - 1]}
-                      isMe={top3[rank - 1]?.userId === myUserId}
-                    />
-                  ))}
+                  {[2, 1, 3].map(rank => {
+                    const entry = top3[rank - 1];
+                    const isMe = entry?.userId === myUserId;
+                    return (
+                      <PodiumBox
+                        key={rank}
+                        rank={rank}
+                        entry={entry}
+                        isMe={isMe}
+                        onPress={
+                          entry && !isMe
+                            ? () => navigation.navigate('PublicProfile', { userId: entry.userId, username: entry.name })
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
                 </View>
 
               </>

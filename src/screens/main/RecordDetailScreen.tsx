@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -6,13 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography } from '../../theme';
 import type { ActivityLogEntry } from '../../types';
 import DailyLogModal from '../../components/modals/DailyLogModal';
-import { setupApi } from '../../api';
 import BicepIcon from '../../../assets/bicep.svg';
 import BrainIcon from '../../../assets/brain.svg';
 import CraftIcon from '../../../assets/craft.svg';
 import PurityIcon from '../../../assets/purity.svg';
 
-type RecordDetailParams = { date: string; logs: ActivityLogEntry[]; section?: string };
+type RecordDetailParams = { date: string; logs: ActivityLogEntry[]; section?: string; onEdited?: () => void };
 type RecordDetailRoute = RouteProp<{ RecordDetail: RecordDetailParams }, 'RecordDetail'>;
 
 const SECTION_ICONS: Record<string, React.FC<any>> = { power: BicepIcon, mind: BrainIcon, craft: CraftIcon, purity: PurityIcon };
@@ -45,28 +44,14 @@ const FieldRow = ({ icon, iconColor, label, value, empty }: FieldRowProps) => (
 const RecordDetailScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RecordDetailRoute>();
-  const { date, logs, section: initialSection } = route.params;
+  const { date, logs, section: initialSection, onEdited } = route.params;
   const [showEditModal, setShowEditModal] = useState(false);
-  const [bookTitles, setBookTitles] = useState<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    setupApi.getProgress()
-      .then(r => {
-        const mindBooks = (r.data.sections?.mind as any)?.books;
-        if (Array.isArray(mindBooks)) {
-          const map = new Map<string, string>();
-          mindBooks.forEach((b: any) => {
-            if (b.userBookId && b.title) map.set(b.userBookId, b.title);
-          });
-          setBookTitles(map);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const formatDate = (dateStr: string): string => {
-    const today = new Date().toISOString().split('T')[0];
-    const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yest = yesterday.toLocaleDateString('en-CA');
     if (dateStr === today) return 'Today';
     if (dateStr === yest) return 'Yesterday';
     const d = new Date(dateStr + 'T00:00:00');
@@ -102,7 +87,7 @@ const RecordDetailScreen = () => {
       );
     }
     if (section === 'mind') {
-      const bookTitle = log?.userBookId ? (bookTitles.get(log.userBookId) || log.userBookId) : null;
+      const bookTitle = log?.bookTitle ?? null;
       const didDo = log?.didUserDo;
       return (
         <>
@@ -125,6 +110,7 @@ const RecordDetailScreen = () => {
     const iconColor = section === 'power' ? '#FFC857' : '#3DFF86';
     return (
       <>
+        {log?.activityName && <FieldRow icon="barbell-outline" iconColor={iconColor} label="Activity" value={log.activityName} />}
         <FieldRow icon="checkmark-circle-outline" iconColor={iconColor} label={section === 'power' ? 'Did you train?' : 'Did you work on your craft?'} value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
         {didDo && log?.hours ? <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={formatHours(log.hours)} /> : null}
         {didDo && log?.description ? <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={log.description} /> : null}
@@ -168,7 +154,7 @@ const RecordDetailScreen = () => {
       <DailyLogModal
         visible={showEditModal}
         onClose={() => setShowEditModal(false)}
-        onComplete={() => { setShowEditModal(false); navigation.goBack(); }}
+        onComplete={() => { onEdited?.(); setShowEditModal(false); navigation.goBack(); }}
         initialDate={new Date(date + 'T00:00:00')}
         initialSection={section}
       />

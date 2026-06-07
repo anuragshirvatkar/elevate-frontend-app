@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Image, FlatList,
-  KeyboardAvoidingView, Platform, Modal, Dimensions, Linking, ActionSheetIOS,
+  KeyboardAvoidingView, Platform, Modal, Dimensions, Linking, ActionSheetIOS, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,7 +26,18 @@ const AVATAR_ACTIVITY: Record<string, string> = {
 
 const formatUnlockRequirement = (name: string, req: any): string => {
   if (!req || typeof req !== 'object') return req ? String(req) : '';
-  const { weeks, days_per_week } = req as { weeks?: number; days_per_week?: number };
+  const { weeks, days_per_week, min_streak_days, max_relapses_per_month } = req as {
+    weeks?: number;
+    days_per_week?: number;
+    min_streak_days?: number;
+    max_relapses_per_month?: number;
+  };
+  if (min_streak_days !== undefined) {
+    const relapseClause = max_relapses_per_month !== undefined
+      ? ` with at most ${max_relapses_per_month} relapse${max_relapses_per_month !== 1 ? 's' : ''} per month`
+      : '';
+    return `Stay clean for at least ${min_streak_days} days${relapseClause}`;
+  }
   const activity = AVATAR_ACTIVITY[name?.toLowerCase()] ?? 'activity';
   const w = weeks ?? '?';
   const d = days_per_week ?? '?';
@@ -87,6 +98,7 @@ const EditProfileScreen = () => {
   );
 
   const [saving, setSaving] = useState(false);
+  const isSavingRef = useRef(false); // ref so beforeRemove closure always sees the current value
   const [storyPopup, setStoryPopup] = useState<{ name: string; story: string } | null>(null);
 
   const [allCompanions, setAllCompanions] = useState<CompanionDto[]>([]);
@@ -126,13 +138,13 @@ const EditProfileScreen = () => {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
-      if (!hasChanges || saving) return;
+      if (!hasChanges || isSavingRef.current) return;
       e.preventDefault();
-      showAlert(
+      // Use native Alert (not custom modal) — guaranteed to show during navigation events
+      Alert.alert(
         'Unsaved Changes',
         'You have unsaved changes. What would you like to do?',
         [
-          { text: 'Cancel', style: 'cancel' },
           {
             text: 'Discard',
             style: 'destructive',
@@ -140,13 +152,15 @@ const EditProfileScreen = () => {
           },
           {
             text: 'Save',
+            style: 'default',
             onPress: async () => { await onSave(); },
           },
-        ]
+        ],
+        { cancelable: false }
       );
     });
     return unsubscribe;
-  }, [navigation, hasChanges, saving]);
+  }, [navigation, hasChanges]);
 
   const allAvatars: Avatar[] = profile?.avatars || [];
   const currentSelected = allAvatars.find((a) => a.id === selectedAvatarId);
@@ -183,6 +197,8 @@ const EditProfileScreen = () => {
       showAlert('Invalid Username', usernameReason || 'Username is not available.');
       return;
     }
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setSaving(true);
     try {
       const links: SocialLink[] = Object.entries(socialLinks)
@@ -204,6 +220,7 @@ const EditProfileScreen = () => {
     } catch (e: any) {
       showAlert('Error', e?.response?.data?.message || 'Failed to save changes.');
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
@@ -516,6 +533,13 @@ const EditProfileScreen = () => {
             </View>
           )}
 
+          {/* ── Bottom Save button ── */}
+          <TouchableOpacity onPress={onSave} disabled={saving} style={[styles.saveBtn, styles.bottomSaveBtn]}>
+            {saving
+              ? <ActivityIndicator size="small" color={colors.background} />
+              : <Text style={styles.saveBtnText}>Save</Text>}
+          </TouchableOpacity>
+
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -614,6 +638,10 @@ const styles = StyleSheet.create({
     borderRadius: 20, minWidth: 56, alignItems: 'center', flexDirection: 'row', gap: 4,
   },
   saveBtnText: { color: colors.background, fontWeight: '700', fontSize: 13 },
+  bottomSaveBtn: {
+    alignSelf: 'center', paddingHorizontal: 48, paddingVertical: 13,
+    marginTop: spacing.lg, marginHorizontal: spacing.lg,
+  },
 
   section: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm },
   sectionTitle: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 15 },

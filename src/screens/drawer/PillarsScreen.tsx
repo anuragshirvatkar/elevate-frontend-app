@@ -47,6 +47,13 @@ const formatDisplay = (t?: string): string => {
   return `${h % 12 || 12}:${m} ${ampm}`;
 };
 
+const timeDiffMinutes = (t1: string, t2: string): number => {
+  const [h1, m1] = t1.split(':').map(Number);
+  const [h2, m2] = t2.split(':').map(Number);
+  const diff = Math.abs(h1 * 60 + m1 - (h2 * 60 + m2));
+  return Math.min(diff, 1440 - diff);
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ActivityItem {
@@ -610,6 +617,37 @@ const PillarsScreen = () => {
 
   const applyTime = (target: Tab, date: Date) => {
     const val = formatTime(date);
+    const conflicts: string[] = [];
+
+    if (target === 'Power') {
+      if (craft.preferredTime && timeDiffMinutes(val, craft.preferredTime) < 60) {
+        conflicts.push(`Craft (${formatDisplay(craft.preferredTime)})`);
+      }
+      if (mind.preferredTime && timeDiffMinutes(val, mind.preferredTime) < 60) {
+        conflicts.push(`Mind (${formatDisplay(mind.preferredTime)})`);
+      }
+    } else if (target === 'Craft') {
+      if (power.preferredTime && timeDiffMinutes(val, power.preferredTime) < 60) {
+        conflicts.push(`Power (${formatDisplay(power.preferredTime)})`);
+      }
+      if (mind.preferredTime && timeDiffMinutes(val, mind.preferredTime) < 60) {
+        conflicts.push(`Mind (${formatDisplay(mind.preferredTime)})`);
+      }
+    } else {
+      if (power.preferredTime && timeDiffMinutes(val, power.preferredTime) < 60) {
+        conflicts.push(`Power (${formatDisplay(power.preferredTime)})`);
+      }
+      if (craft.preferredTime && timeDiffMinutes(val, craft.preferredTime) < 60) {
+        conflicts.push(`Craft (${formatDisplay(craft.preferredTime)})`);
+      }
+    }
+
+    if (conflicts.length > 0) {
+      showAlert('Time Conflict', `Selected time is within 1 hour of your ${conflicts.join(' and ')} time. Please choose a different time.`);
+      setShowTimePicker(false);
+      return;
+    }
+
     if (target === 'Power') setPower((s) => ({ ...s, preferredTime: val }));
     else if (target === 'Craft') setCraft((s) => ({ ...s, preferredTime: val }));
     else setMind((s) => ({ ...s, preferredTime: val }));
@@ -675,7 +713,14 @@ const PillarsScreen = () => {
   const renderSectionTab = (section: 'power' | 'craft') => {
     const state = section === 'power' ? power : craft;
     const tab: Tab = section === 'power' ? 'Power' : 'Craft';
-    const canAddMore = state.activities.length < MAX_ACTIVITIES;
+
+    const handleAddActivity = () => {
+      if (state.activities.length >= MAX_ACTIVITIES) {
+        showAlert('Maximum reached', 'You can have at most 3 activities. Remove one first to add a new one.');
+        return;
+      }
+      openActivityPicker(section);
+    };
 
     return (
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
@@ -708,7 +753,13 @@ const PillarsScreen = () => {
         <View style={s.rowGroup}>
           <View style={s.groupLabelRow}>
             <Text style={s.groupLabel}>Activities</Text>
-            <Text style={s.groupHint}>{state.activities.length}/{MAX_ACTIVITIES}</Text>
+            <View style={s.rowRight}>
+              <Text style={s.groupHint}>{state.activities.length}/{MAX_ACTIVITIES}</Text>
+              <TouchableOpacity style={s.addBookBtn} onPress={handleAddActivity} activeOpacity={0.7}>
+                <Ionicons name="add" size={14} color="#000" />
+                <Text style={s.addBookBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {state.activities.map((a, idx) => (
@@ -741,16 +792,6 @@ const PillarsScreen = () => {
             <Text style={s.emptyText}>No activities added yet.</Text>
           )}
 
-          {canAddMore && (
-            <TouchableOpacity
-              style={s.addRow}
-              onPress={() => openActivityPicker(section)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add-circle-outline" size={18} color="#555" />
-              <Text style={s.addRowText}>Add Activity</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         <View style={{ height: 100 }} />
@@ -771,22 +812,26 @@ const PillarsScreen = () => {
             value={mind.isActive}
             onValueChange={(v) => {
               if (v) {
-                showAlert(
-                  'Enable Mind Section',
-                  'To enable Mind, please select a book, preferred reading time, and rest days in the Mind tab.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Set Up',
-                      onPress: () => {
-                        setMind((s) => ({ ...s, isActive: true }));
-                        mindEnabledUnsaved.current = true;
-                        setActiveTab('Mind');
-                        openBookPicker();
+                if (mind.books.length > 0) {
+                  setMind((s) => ({ ...s, isActive: true }));
+                } else {
+                  showAlert(
+                    'Enable Mind Section',
+                    'To enable Mind, please select a book, preferred reading time, and rest days in the Mind tab.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Set Up',
+                        onPress: () => {
+                          setMind((s) => ({ ...s, isActive: true }));
+                          mindEnabledUnsaved.current = true;
+                          setActiveTab('Mind');
+                          openBookPicker();
+                        },
                       },
-                    },
-                  ]
-                );
+                    ]
+                  );
+                }
               } else {
                 setMind((s) => ({ ...s, isActive: false }));
               }

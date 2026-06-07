@@ -139,7 +139,9 @@ export interface ActivityLogEntry {
   id: string;
   section: LogSection;
   activityId?: string;
+  activityName?: string;
   userBookId?: string;
+  bookTitle?: string;
   didUserDo?: boolean;
   hours?: number;
   relapseCount?: number;
