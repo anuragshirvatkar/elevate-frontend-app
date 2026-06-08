@@ -40,7 +40,10 @@
       "Bash(git push *)",
       "Bash(node *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Projects\\\\elevate-frontend\" -Recurse -Directory)",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Skill(run)",
+      "Bash(npx kill-port *)",
+      "Bash(Start-Sleep *)"
     ]
   }
 }
