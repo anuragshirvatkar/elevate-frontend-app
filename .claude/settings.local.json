@@ -43,7 +43,8 @@
       "Bash(Select-Object FullName)",
       "Skill(run)",
       "Bash(npx kill-port *)",
-      "Bash(Start-Sleep *)"
+      "Bash(Start-Sleep *)",
+      "Bash(git commit *)"
     ]
   }
 }
