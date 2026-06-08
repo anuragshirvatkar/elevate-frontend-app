@@ -6,6 +6,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { OnboardingStackScreenProps } from '../../navigation/types';
 import { setupApi, activitiesApi } from '../../api';
@@ -393,7 +394,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
         {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.replace('SetupPower')} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
           <View style={styles.progressRing}>
@@ -765,7 +766,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 4,
   },
-  backText: { ...typography.body, color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textShadowColor: '#FFFFFF', textShadowRadius: 4 },
+  backText: {
+    ...typography.body,
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textShadowColor: '#FFFFFF',
+    textShadowRadius: 4,
+    lineHeight: 20,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   progressRing: {
     width: 40,
     height: 40,

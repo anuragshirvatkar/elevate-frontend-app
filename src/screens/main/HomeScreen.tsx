@@ -109,9 +109,14 @@ const HomeScreen = () => {
 
   // Companion notification
   const [notifMessage, setNotifMessage] = useState<CompanionMessage | null>(null);
+  const notifMessageRef = useRef<CompanionMessage | null>(null);
+  const loadingRef = useRef(loading);
   const notifSlide = useRef(new Animated.Value(SCREEN_WIDTH)).current;
   const dismissedIds = useRef<Set<string>>(new Set());
   const pendingNotif = useRef<CompanionMessage | null>(null);
+
+  useEffect(() => { notifMessageRef.current = notifMessage; }, [notifMessage]);
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
 
   // Track RecordDetail navigation: skip heavy reload if user only viewed (no edit)
   const isViewingRecord = useRef(false);
@@ -192,16 +197,16 @@ const HomeScreen = () => {
 
   const showNotif = useCallback((next: CompanionMessage) => {
     setNotifMessage(next);
-    Audio.Sound.createAsync(require('../../../assets/notification-bell.wav'))
-      .then(({ sound }) => { sound.playAsync(); sound.setOnPlaybackStatusUpdate((s) => { if (s.isLoaded && s.didJustFinish) sound.unloadAsync(); }); })
+    Audio.Sound.createAsync(require('../../../assets/notification-bell.wav'), { shouldPlay: true })
+      .then(({ sound }) => { setTimeout(() => sound.unloadAsync().catch(() => {}), 3000); })
       .catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    notifSlide.setValue(500);
+    notifSlide.setValue(SCREEN_WIDTH);
     Animated.spring(notifSlide, {
       toValue: 0,
       useNativeDriver: true,
-      tension: 60,
-      friction: 10,
+      tension: 80,
+      friction: 20,
     }).start();
   }, []);
 
@@ -211,6 +216,7 @@ const HomeScreen = () => {
       showNotif(pendingNotif.current);
       pendingNotif.current = null;
     }
+    loadingRef.current = loading;
   }, [loading]);
 
   useFocusEffect(useCallback(() => {
@@ -230,15 +236,16 @@ const HomeScreen = () => {
 
     companionApi.getUnreadMessages().then(({ data }) => {
       const next = data.find((m: CompanionMessage) => !dismissedIds.current.has(m.id));
-      if (next && (!notifMessage || notifMessage.id !== next.id)) {
-        if (loading) {
+      const current = notifMessageRef.current;
+      if (next && (!current || current.id !== next.id)) {
+        if (loadingRef.current) {
           pendingNotif.current = next;
         } else {
           showNotif(next);
         }
       }
     }).catch(() => {});
-  }, [loading, notifMessage, showNotif, activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate]));
+  }, [showNotif, activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate]));
 
   const dismissNotif = () => {
     Animated.timing(notifSlide, {

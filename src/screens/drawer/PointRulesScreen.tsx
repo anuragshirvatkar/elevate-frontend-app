@@ -30,6 +30,7 @@ const SECTIONS: Section[] = [
     iconSize: 18,
     rules: [
       { label: 'Did activity', points: '+10' },
+      { label: 'Second activity added', points: '+5' },
       { label: 'Has description', points: '+2' },
       { label: 'Rest day bonus', points: '+15' },
       { label: 'Did not do', points: '0' },
@@ -52,6 +53,7 @@ const SECTIONS: Section[] = [
     Icon: CraftIcon,
     rules: [
       { label: 'Did activity', points: '+10' },
+      { label: 'Second activity added', points: '+5' },
       { label: 'Extra hours (beyond 2)', points: '+2 / hr' },
       { label: 'Has description', points: '+2' },
       { label: 'Rest day bonus', points: '+15' },

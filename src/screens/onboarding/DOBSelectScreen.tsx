@@ -500,7 +500,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 4,
   },
-  backText: { ...typography.body, color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textShadowColor: '#FFFFFF', textShadowRadius: 4 },
+  backText: {
+    ...typography.body,
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textShadowColor: '#FFFFFF',
+    textShadowRadius: 4,
+    lineHeight: 20,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   progressRing: {
     width: 40,
     height: 40,

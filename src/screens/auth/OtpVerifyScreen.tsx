@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import type { AuthStackScreenProps } from '../../navigation/types';
 import { authApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -97,7 +98,7 @@ const OtpVerifyScreen: React.FC<AuthStackScreenProps<'OtpVerify'>> = ({ route, n
         />
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
           <View style={styles.form}>
@@ -215,7 +216,17 @@ const styles = StyleSheet.create({
     elevation: 4,
     marginBottom: spacing.md,
   },
-  backText: { ...typography.body, color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textShadowColor: '#FFFFFF', textShadowRadius: 4 },
+  backText: {
+    ...typography.body,
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textShadowColor: '#FFFFFF',
+    textShadowRadius: 4,
+    lineHeight: 20,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   title: {
     fontSize: 40,
     fontWeight: '600',

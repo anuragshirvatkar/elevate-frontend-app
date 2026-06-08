@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import ImageSourceSheet from '../common/ImageSourceSheet';
+import { useNavigation } from '@react-navigation/native';
 import { activitiesApi, setupApi, uploadsApi, helpApi } from '../../api';
 import { useUser } from '../../context/UserContext';
 import type { ActivityLogEntry } from '../../types';
@@ -93,6 +94,7 @@ const hoursValueToLabel = (hours?: number): string => {
 
 
 const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onComplete, onNavigateToMind, initialDate, initialSection }) => {
+  const navigation = useNavigation<any>();
   const [step, setStep] = useState<Step>('power');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [powerActivities, setPowerActivities] = useState<SectionActivity[]>([]);
@@ -222,6 +224,22 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         ...(hasPurityLog && { purity: newPurity }),
         ...(Object.keys(newMind).length && { mind: newMind }),
       }));
+
+      // Ensure logged activities that aren't in setup (e.g. old custom activities) are visible
+      setPowerActivities((prev) => {
+        const existingIds = new Set(prev.map((a) => a.activityId));
+        const extra = logs
+          .filter((l) => l.section === 'power' && l.activityId && l.activityName && !existingIds.has(l.activityId!))
+          .map((l) => ({ activityId: l.activityId!, name: l.activityName! }));
+        return extra.length ? [...prev, ...extra] : prev;
+      });
+      setCraftActivities((prev) => {
+        const existingIds = new Set(prev.map((a) => a.activityId));
+        const extra = logs
+          .filter((l) => l.section === 'craft' && l.activityId && l.activityName && !existingIds.has(l.activityId!))
+          .map((l) => ({ activityId: l.activityId!, name: l.activityName! }));
+        return extra.length ? [...prev, ...extra] : prev;
+      });
 
       // Advance to first section that has no logs yet
       const loggedSections = new Set(logs.map((l) => l.section));
@@ -525,6 +543,15 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                       const res = await activitiesApi.createCustom(name, 'power');
                       const act = res.data as any;
                       const newAct: SectionActivity = { activityId: act.id || act.activityId, name: act.name };
+                      try {
+                        const setupRes = await setupApi.getSection('power');
+                        const currentActivities = (setupRes.data.activities || []).map((a: any) => ({ activityId: a.activityId, isPrimary: a.isPrimary ?? false }));
+                        await setupApi.putSection('power', {
+                          preferredTime: setupRes.data.preferredTime,
+                          restDays: setupRes.data.restDays,
+                          activities: [...currentActivities, { activityId: newAct.activityId, isPrimary: false }],
+                        });
+                      } catch {}
                       setPowerActivities((prev) => [...prev, newAct]);
                       return newAct;
                     } catch { return null; }
@@ -546,6 +573,15 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                       const res = await activitiesApi.createCustom(name, 'craft');
                       const act = res.data as any;
                       const newAct: SectionActivity = { activityId: act.id || act.activityId, name: act.name };
+                      try {
+                        const setupRes = await setupApi.getSection('craft');
+                        const currentActivities = (setupRes.data.activities || []).map((a: any) => ({ activityId: a.activityId, isPrimary: a.isPrimary ?? false }));
+                        await setupApi.putSection('craft', {
+                          preferredTime: setupRes.data.preferredTime,
+                          restDays: setupRes.data.restDays,
+                          activities: [...currentActivities, { activityId: newAct.activityId, isPrimary: false }],
+                        });
+                      } catch {}
                       setCraftActivities((prev) => [...prev, newAct]);
                       return newAct;
                     } catch { return null; }
@@ -832,7 +868,8 @@ const ActivityLogStep: React.FC<{
   emptyText: string;
   resetKey?: string;
   onActivePhaseChange?: (active: boolean) => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, companion, question, hoursQuestion, emptyText, resetKey, onActivePhaseChange }) => {
+  onSecondActivityAdded?: () => void;
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, companion, question, hoursQuestion, emptyText, resetKey, onActivePhaseChange, onSecondActivityAdded }) => {
   const [allActivities, setAllActivities] = useState<SectionActivity[]>(activities);
   // donePhases: tracks which phases are shown as list rows for the in-progress activity
   const [donePhases, setDonePhases] = useState<Array<'yesno' | 'hours' | 'notes'>>([]);
@@ -859,12 +896,28 @@ const ActivityLogStep: React.FC<{
 
   const loggedIds = [...confirmedIds, ...(activePhase ? [activePhase.id] : [])];
   const [currentId, setCurrentId] = useState<string | null>(() => {
-    if (Object.keys(logState).length > 0) return null;
+    // If logState already has entries (existing logs), don't set currentId
+    // so that confirmedIds syncs properly and shows list view
+    const hasExistingLogs = Object.keys(logState).length > 0;
+    if (hasExistingLogs) return null;
     const def = getDefaultActivity(activities, []);
     return def?.activityId ?? null;
   });
 
-  useEffect(() => { setAllActivities(activities); }, [activities]);
+  useEffect(() => {
+    // Merge activities from props with local state, avoiding duplicates
+    setAllActivities((prev) => {
+      const existingIds = new Set(prev.map((a) => a.activityId));
+      const newFromProps = activities.filter((a) => !existingIds.has(a.activityId));
+      // Also check if any activities were removed from props - if so, reset to props
+      const propIds = new Set(activities.map((a) => a.activityId));
+      const hasRemoved = prev.some((a) => !propIds.has(a.activityId) && !a.activityId.startsWith('custom-'));
+      if (newFromProps.length === 0 && !hasRemoved) return prev;
+      // If there are new props or removed activities, rebuild from props + local custom activities
+      const localCustom = prev.filter((a) => !propIds.has(a.activityId));
+      return [...activities, ...localCustom];
+    });
+  }, [activities]);
 
   // Reset all state on date change
   const isFirstMount = React.useRef(true);
@@ -879,23 +932,39 @@ const ActivityLogStep: React.FC<{
     setSelectedReason('');
     setShowCustomReason(false);
     setCustomReasonText('');
-    const def = getDefaultActivity(activities, []);
-    setCurrentId(def?.activityId ?? null);
+    // If logState already has entries (existing logs), don't set currentId
+    // so that confirmedIds syncs properly and shows list view
+    const hasExistingLogs = Object.keys(logState).length > 0;
+    if (hasExistingLogs) {
+      setCurrentId(null);
+    } else {
+      const def = getDefaultActivity(activities, []);
+      setCurrentId(def?.activityId ?? null);
+    }
   }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync confirmedIds when prepopulated from outside (date change with existing records)
+  // Sync confirmedIds when prepopulated from outside (e.g. logState arrives after mount)
   const logStateKey = Object.keys(logState).join(',');
   useEffect(() => {
-    if (logStateKey.length > 0 && currentId === null && activePhase === null) {
+    if (logStateKey.length > 0 && confirmedIds.length === 0 && activePhase === null) {
       setConfirmedIds(Object.keys(logState));
+      setCurrentId(null);
       setDonePhases([]);
     }
   }, [logStateKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { onActivePhaseChange?.(activePhase !== null); }, [activePhase]);
 
-  const currentActivity = currentId ? allActivities.find((a) => a.activityId === currentId) ?? null : null;
-  const phaseActivity = activePhase ? allActivities.find((a) => a.activityId === activePhase.id) ?? null : null;
+  const currentActivity = currentId
+    ? (allActivities.find((a) => a.activityId === currentId)
+        ?? activities.find((a) => a.activityId === currentId)
+        ?? null)
+    : null;
+  const phaseActivity = activePhase
+    ? (allActivities.find((a) => a.activityId === activePhase.id)
+        ?? activities.find((a) => a.activityId === activePhase.id)
+        ?? null)
+    : null;
 
   const pickableActivities = allActivities.filter((a) => !loggedIds.includes(a.activityId));
 
@@ -913,7 +982,12 @@ const ActivityLogStep: React.FC<{
     const result = await onAddActivity(name);
     setAddingCustom(false);
     if (result) {
-      setAllActivities((prev) => [...prev, result]);
+      setAllActivities((prev) => {
+        // Avoid duplicates if activity already exists
+        const exists = prev.some((a) => a.activityId === result.activityId);
+        if (exists) return prev;
+        return [...prev, result];
+      });
       setCurrentId(result.activityId);
       setShowDropdown(false);
       setShowCustomInput(false);
@@ -977,10 +1051,14 @@ const ActivityLogStep: React.FC<{
   };
 
   const confirmActivity = (id: string) => {
+    const wasSecondActivity = confirmedIds.length === 1;
     setConfirmedIds((prev) => [...prev, id]);
     setDonePhases([]);
     setActivePhase(null);
     setCurrentId(null);
+    if (wasSecondActivity && onSecondActivityAdded) {
+      onSecondActivityAdded();
+    }
   };
 
   const handleEdit = (id: string, phase: 'yesno' | 'hours' | 'notes' | 'images' | 'reason' = 'yesno') => {
@@ -1064,16 +1142,54 @@ const ActivityLogStep: React.FC<{
         );
       })}
 
-      {/* Add second activity button — shown after first is confirmed, if more are available (max 2) */}
-      {confirmedIds.length > 0 && confirmedIds.length < 2 && pickableActivities.length > 0 && !activePhase && currentId === null && (
+      {/* Add second activity button — shown after first is confirmed, max 2 activities */}
+      {confirmedIds.length > 0 && confirmedIds.length < 2 && !activePhase && currentId === null && !showCustomInput && (
         <TouchableOpacity
           style={styles.addSecondBtn}
-          onPress={() => setCurrentId(pickableActivities[0].activityId)}
+          onPress={() => {
+            const nextActivity = pickableActivities[0];
+            if (nextActivity) {
+              setCurrentId(nextActivity.activityId);
+              setShowDropdown(false);
+              setShowCustomInput(false);
+            } else {
+              // No pre-configured second activity — go straight to custom input
+              setShowDropdown(true);
+              setShowCustomInput(true);
+            }
+          }}
           activeOpacity={0.7}
         >
           <Ionicons name="add-circle-outline" size={16} color="#555" />
           <Text style={styles.addSecondBtnText}>Add second activity</Text>
         </TouchableOpacity>
+      )}
+
+      {/* Standalone custom input when no pre-configured second activity is available */}
+      {currentId === null && confirmedIds.length > 0 && confirmedIds.length < 2 && showDropdown && showCustomInput && !activePhase && (
+        <CompanionBubble companion={companion}>
+          <View style={styles.actPickerCustomRow}>
+            <TextInput
+              style={styles.actPickerCustomInput}
+              placeholder="Activity name..."
+              placeholderTextColor={colors.textMuted}
+              value={customName}
+              onChangeText={setCustomName}
+              autoFocus
+              onSubmitEditing={handleAddCustom}
+            />
+            <TouchableOpacity
+              style={styles.actPickerCustomConfirm}
+              onPress={handleAddCustom}
+              disabled={addingCustom || !customName.trim()}
+            >
+              {addingCustom
+                ? <ActivityIndicator size="small" color="#000" />
+                : <Ionicons name="checkmark" size={18} color="#000" />
+              }
+            </TouchableOpacity>
+          </View>
+        </CompanionBubble>
       )}
 
       {/* In-progress activity: show answered phases as list rows, then the active question */}
@@ -1273,7 +1389,7 @@ const ActivityLogStep: React.FC<{
                 <Text style={styles.actPickerEmptyText}>No activities</Text>
               )}
               <View style={styles.actPickerDivider} />
-              {showCustomInput ? (
+              {allActivities.length < 3 && (showCustomInput ? (
                 <View style={styles.actPickerCustomRow}>
                   <TextInput
                     style={styles.actPickerCustomInput}
@@ -1304,7 +1420,7 @@ const ActivityLogStep: React.FC<{
                   <Ionicons name="add-circle-outline" size={16} color="#555" />
                   <Text style={styles.actPickerAddCustomText}>Add custom activity</Text>
                 </TouchableOpacity>
-              )}
+              ))}
             </View>
           )}
 
@@ -1391,7 +1507,8 @@ const PowerStep: React.FC<{
   resetKey?: string;
   companion: CompanionDto | null;
   onActivePhaseChange?: (active: boolean) => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange }) => (
+  onSecondActivityAdded?: () => void;
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange, onSecondActivityAdded }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
@@ -1405,6 +1522,7 @@ const PowerStep: React.FC<{
     hoursQuestion="Nice! How many hours did you spend on"
     emptyText="No power activities configured."
     onActivePhaseChange={onActivePhaseChange}
+    onSecondActivityAdded={onSecondActivityAdded}
   />
 );
 
@@ -1418,7 +1536,8 @@ const CraftStep: React.FC<{
   resetKey?: string;
   companion: CompanionDto | null;
   onActivePhaseChange?: (active: boolean) => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange }) => (
+  onSecondActivityAdded?: () => void;
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange, onSecondActivityAdded }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
@@ -1432,6 +1551,7 @@ const CraftStep: React.FC<{
     hoursQuestion="Nice! How many hours did you put into"
     emptyText="No craft activities configured."
     onActivePhaseChange={onActivePhaseChange}
+    onSecondActivityAdded={onSecondActivityAdded}
   />
 );
 
@@ -2547,6 +2667,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     borderColor: '#333',
     overflow: 'hidden',
+    width: '100%',
   },
   actPickerItem: {
     flexDirection: 'row',
@@ -2595,8 +2716,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     gap: 8,
+    width: '100%',
   },
   actPickerCustomInput: {
     flex: 1,
@@ -2605,15 +2727,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    minWidth: 0,
   },
   actPickerCustomConfirm: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.text,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
 });
 

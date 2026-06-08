@@ -2,11 +2,12 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Image, FlatList,
-  KeyboardAvoidingView, Platform, Modal, Dimensions, Linking, ActionSheetIOS, Alert,
+  KeyboardAvoidingView, Platform, Modal, Dimensions, Linking, ActionSheetIOS,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { profileApi, setupApi } from '../../api';
 import { useUser } from '../../context/UserContext';
@@ -136,31 +137,60 @@ const EditProfileScreen = () => {
     selectedAvatarId !== origAvatarId ||
     selectedCompanionId !== origCompanionId;
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
-      if (!hasChanges || isSavingRef.current) return;
-      e.preventDefault();
-      // Use native Alert (not custom modal) — guaranteed to show during navigation events
-      Alert.alert(
-        'Unsaved Changes',
-        'You have unsaved changes. What would you like to do?',
-        [
-          {
-            text: 'Discard',
-            style: 'destructive',
-            onPress: () => navigation.dispatch(e.data.action),
-          },
-          {
-            text: 'Save',
-            style: 'default',
-            onPress: async () => { await onSave(); },
-          },
-        ],
-        { cancelable: false }
-      );
-    });
-    return unsubscribe;
-  }, [navigation, hasChanges]);
+  // Keep refs to latest values for the beforeRemove listener (defined below)
+  const onSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const hasChangesRef = useRef(hasChanges);
+  hasChangesRef.current = hasChanges;
+
+  // Block navigation when there are unsaved changes (both nav back button and Android hardware back)
+  useFocusEffect(
+    React.useCallback(() => {
+      // Handle React Navigation back (app back button, gesture, etc.)
+      const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+        if (!hasChangesRef.current || isSavingRef.current) return;
+        e.preventDefault();
+        showAlert(
+          'Unsaved Changes',
+          'You have unsaved changes. What would you like to do?',
+          [
+            {
+              text: 'Discard',
+              style: 'destructive',
+              onPress: () => navigation.dispatch(e.data.action),
+            },
+            {
+              text: 'Save',
+              style: 'default',
+              onPress: async () => { await onSaveRef.current?.(); },
+            },
+          ]
+        );
+      });
+
+      // Handle Android hardware back button as fallback
+      const backHandler = Platform.OS === 'android'
+        ? BackHandler.addEventListener('hardwareBackPress', () => {
+            if (hasChangesRef.current && !isSavingRef.current) {
+              showAlert(
+                'Unsaved Changes',
+                'You have unsaved changes. What would you like to do?',
+                [
+                  { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
+                  { text: 'Save', style: 'default', onPress: async () => { await onSaveRef.current?.(); } },
+                ]
+              );
+              return true; // Block default back
+            }
+            return false; // Allow default back
+          })
+        : null;
+
+      return () => {
+        unsubscribe();
+        backHandler?.remove();
+      };
+    }, [navigation])
+  );
 
   const allAvatars: Avatar[] = profile?.avatars || [];
   const currentSelected = allAvatars.find((a) => a.id === selectedAvatarId);
@@ -224,6 +254,9 @@ const EditProfileScreen = () => {
       setSaving(false);
     }
   };
+
+  // Link onSave to ref for beforeRemove listener
+  onSaveRef.current = onSave;
 
   const usernameIcon = () => {
     if (usernameStatus === 'checking') return <ActivityIndicator size="small" color={colors.textMuted} />;

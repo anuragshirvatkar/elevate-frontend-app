@@ -58,13 +58,9 @@ const RecordDetailScreen = () => {
     return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   };
 
-  const sectionMap = new Map<string, ActivityLogEntry>();
-  for (const log of logs) {
-    if (!sectionMap.has(log.section) || log.didUserDo) sectionMap.set(log.section, log);
-  }
-
   const section = (initialSection || 'power') as 'power' | 'craft' | 'mind' | 'purity';
-  const log = sectionMap.get(section);
+  const sectionLogs = logs.filter(l => l.section === section);
+  const log = sectionLogs.find(l => l.didUserDo) ?? sectionLogs[0];
   const Icon = SECTION_ICONS[section];
 
   const renderSectionFields = () => {
@@ -106,23 +102,33 @@ const RecordDetailScreen = () => {
         </>
       );
     }
-    const didDo = log?.didUserDo;
     const iconColor = section === 'power' ? '#FFC857' : '#3DFF86';
+    const didLabel = section === 'power' ? 'Did you train?' : 'Did you work on your craft?';
+    if (sectionLogs.length === 0) {
+      return <FieldRow icon="barbell-outline" iconColor="#444" label={didLabel} value="—" empty />;
+    }
     return (
       <>
-        {log?.activityName && <FieldRow icon="barbell-outline" iconColor={iconColor} label="Activity" value={log.activityName} />}
-        <FieldRow icon="checkmark-circle-outline" iconColor={iconColor} label={section === 'power' ? 'Did you train?' : 'Did you work on your craft?'} value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
-        {didDo && log?.hours ? <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={formatHours(log.hours)} /> : null}
-        {didDo && log?.description ? <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={log.description} /> : null}
-        {!didDo && log?.reasonIfNo ? <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log.reasonIfNo} /> : null}
-        {didDo && log?.images && log.images.length > 0 && (
-          <View style={styles.imagesSection}>
-            <Text style={styles.imagesLabel}>Photos ({log.images.length})</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {log.images.map((uri, i) => <Image key={i} source={{ uri }} style={styles.thumbnail} />)}
-            </ScrollView>
-          </View>
-        )}
+        {sectionLogs.map((actLog, idx) => (
+          <React.Fragment key={actLog.id || idx}>
+            {sectionLogs.length > 1 && idx > 0 && <View style={styles.activityDivider} />}
+            {actLog.activityName && (
+              <FieldRow icon="barbell-outline" iconColor={iconColor} label="Activity" value={actLog.activityName} />
+            )}
+            <FieldRow icon="checkmark-circle-outline" iconColor={iconColor} label={didLabel} value={actLog.didUserDo ? 'Yes' : 'No'} />
+            {actLog.didUserDo && actLog.hours ? <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={formatHours(actLog.hours)} /> : null}
+            {actLog.didUserDo && actLog.description ? <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={actLog.description} /> : null}
+            {!actLog.didUserDo && actLog.reasonIfNo ? <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={actLog.reasonIfNo} /> : null}
+            {actLog.didUserDo && actLog.images && actLog.images.length > 0 && (
+              <View style={styles.imagesSection}>
+                <Text style={styles.imagesLabel}>Photos ({actLog.images.length})</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {actLog.images.map((uri, i) => <Image key={i} source={{ uri }} style={styles.thumbnail} />)}
+                </ScrollView>
+              </View>
+            )}
+          </React.Fragment>
+        ))}
       </>
     );
   };
@@ -193,6 +199,7 @@ const styles = StyleSheet.create({
   imagesSection: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
   imagesLabel: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.sm },
   thumbnail: { width: 80, height: 80, borderRadius: 8, marginRight: spacing.sm },
+  activityDivider: { height: 6, backgroundColor: '#111' },
 });
 
 export default RecordDetailScreen;
