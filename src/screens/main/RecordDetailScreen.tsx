@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Modal, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,11 +41,14 @@ const FieldRow = ({ icon, iconColor, label, value, empty }: FieldRowProps) => (
   </View>
 );
 
+const SCREEN = Dimensions.get('window');
+
 const RecordDetailScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RecordDetailRoute>();
   const { date, logs, section: initialSection, onEdited } = route.params;
   const [showEditModal, setShowEditModal] = useState(false);
+  const [lightboxUri, setLightboxUri] = useState<string | null>(null);
 
   const formatDate = (dateStr: string): string => {
     const today = new Date().toLocaleDateString('en-CA');
@@ -95,7 +98,11 @@ const RecordDetailScreen = () => {
             <View style={styles.imagesSection}>
               <Text style={styles.imagesLabel}>Photos ({log.images.length})</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {log.images.map((uri, i) => <Image key={i} source={{ uri }} style={styles.thumbnail} />)}
+                {log.images.map((uri, i) => (
+              <TouchableOpacity key={i} onPress={() => setLightboxUri(uri)} activeOpacity={0.85}>
+                <Image source={{ uri }} style={styles.thumbnail} />
+              </TouchableOpacity>
+            ))}
               </ScrollView>
             </View>
           )}
@@ -123,7 +130,11 @@ const RecordDetailScreen = () => {
               <View style={styles.imagesSection}>
                 <Text style={styles.imagesLabel}>Photos ({actLog.images.length})</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {actLog.images.map((uri, i) => <Image key={i} source={{ uri }} style={styles.thumbnail} />)}
+                  {actLog.images.map((uri, i) => (
+                <TouchableOpacity key={i} onPress={() => setLightboxUri(uri)} activeOpacity={0.85}>
+                  <Image source={{ uri }} style={styles.thumbnail} />
+                </TouchableOpacity>
+              ))}
                 </ScrollView>
               </View>
             )}
@@ -156,6 +167,22 @@ const RecordDetailScreen = () => {
       <ScrollView showsVerticalScrollIndicator={false}>
         {renderSectionFields()}
       </ScrollView>
+
+      {/* Lightbox */}
+      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+        <View style={styles.lightboxOverlay}>
+          <TouchableOpacity style={styles.lightboxClose} onPress={() => setLightboxUri(null)} activeOpacity={0.8}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          {lightboxUri && (
+            <Image
+              source={{ uri: lightboxUri }}
+              style={styles.lightboxImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
 
       <DailyLogModal
         visible={showEditModal}
@@ -200,6 +227,28 @@ const styles = StyleSheet.create({
   imagesLabel: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.sm },
   thumbnail: { width: 80, height: 80, borderRadius: 8, marginRight: spacing.sm },
   activityDivider: { height: 6, backgroundColor: '#111' },
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxImage: {
+    width: SCREEN.width,
+    height: SCREEN.height * 0.8,
+  },
+  lightboxClose: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 export default RecordDetailScreen;

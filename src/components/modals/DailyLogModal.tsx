@@ -1269,18 +1269,19 @@ const ActivityLogStep: React.FC<{
                   <Text style={styles.questionText}> went?</Text>
                 </View>
                 <View style={styles.hoursWrap}>
-                  <View style={styles.inputWithTick}>
+                  <View style={styles.notesRow}>
                     <TextInput
-                      style={[styles.hoursInput, styles.descInput, styles.hoursInputPad]}
+                      style={[styles.hoursInput, styles.descInput, styles.notesInput]}
                       placeholder="How did the session go? (optional)"
                       placeholderTextColor={colors.textMuted}
                       value={s?.description || ''}
                       onChangeText={(v) => onUpdate(activePhase.id, 'description', v)}
                       multiline
                       autoFocus
+                      scrollEnabled
                     />
-                    <TouchableOpacity style={styles.inputTickBtn} onPress={handleNotesDone}>
-                      <Ionicons name="checkmark" size={22} color={colors.success} />
+                    <TouchableOpacity style={styles.notesDoneBtn} onPress={handleNotesDone}>
+                      <Text style={styles.inputDoneText}>Done</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1934,6 +1935,13 @@ const MindStep: React.FC<{
     notify(id, notesBookId === id ? null : notesBookId, imagesBookId === id ? null : imagesBookId, reasonBookId === id ? null : reasonBookId);
   };
 
+  const handleEditNotes = (id: string) => {
+    setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
+    setImagesBookId(null);
+    setNotesBookId(id);
+    notify(selectedId, id, null, reasonBookId);
+  };
+
   return (
     <View style={styles.stepContent}>
       {books.length === 0 && (
@@ -1951,9 +1959,16 @@ const MindStep: React.FC<{
         const s = logState[id];
         const status = s?.didUserDo ? 'Read ✓' : `Skipped${s?.reasonIfNo ? ` · ${s.reasonIfNo}` : ''}`;
         return (
-          <TouchableOpacity key={id} activeOpacity={0.7} onPress={() => handleEdit(id)}>
-            <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} editable />
-          </TouchableOpacity>
+          <React.Fragment key={id}>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id)}>
+              <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} editable />
+            </TouchableOpacity>
+            {!!s?.didUserDo && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => handleEditNotes(id)}>
+                <TweetSummary companion={companion} name={book.title} subtitle="Any notes?" status={s?.description || '—'} editable />
+              </TouchableOpacity>
+            )}
+          </React.Fragment>
         );
       })}
 
@@ -1966,18 +1981,19 @@ const MindStep: React.FC<{
             <Text style={styles.questionText}>?</Text>
           </View>
           <View style={styles.hoursWrap}>
-            <View style={styles.inputWithTick}>
+            <View style={styles.notesRow}>
               <TextInput
-                style={[styles.hoursInput, styles.descInput, styles.hoursInputPad]}
+                style={[styles.hoursInput, styles.descInput, styles.notesInput]}
                 placeholder="Jot something down (optional)"
                 placeholderTextColor={colors.textMuted}
                 value={logState[notesBook.userBookId]?.description || ''}
                 onChangeText={(v) => onUpdate(notesBook.userBookId, 'description', v)}
                 multiline
                 autoFocus
+                scrollEnabled
               />
-              <TouchableOpacity style={styles.inputTickBtn} onPress={handleNotesDone}>
-                <Ionicons name="checkmark" size={22} color={colors.success} />
+              <TouchableOpacity style={styles.notesDoneBtn} onPress={handleNotesDone}>
+                <Text style={styles.inputDoneText}>Done</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2339,6 +2355,10 @@ const styles = StyleSheet.create({
   skipBtnText: { ...typography.bodySmall, color: colors.textSecondary },
   imageDoneTickBtn: { paddingHorizontal: spacing.sm },
   descInput: { minHeight: 60, textAlignVertical: 'top' },
+  inputDoneText: { fontSize: 12, fontWeight: '700' as const, color: colors.success },
+  notesRow: { gap: 8 },
+  notesInput: { width: '100%', maxHeight: 130 },
+  notesDoneBtn: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.success },
   addSecondBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 12, paddingHorizontal: spacing.sm,

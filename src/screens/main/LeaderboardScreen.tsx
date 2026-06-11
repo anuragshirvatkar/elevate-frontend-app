@@ -259,29 +259,54 @@ const LeaderboardScreen = () => {
           contentContainerStyle={rankings.length === 0 ? styles.emptyContainer : undefined}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
           ListHeaderComponent={
-            rankings.length > 0 && !hasPodiumTies ? (
+            rankings.length > 0 ? (
               <>
-                {/* Podium */}
-                <View style={styles.podiumRow}>
-                  {[2, 1, 3].map(rank => {
-                    const entry = top3[rank - 1];
-                    const isMe = entry?.userId === myUserId;
-                    return (
-                      <PodiumBox
-                        key={rank}
-                        rank={rank}
-                        entry={entry}
-                        isMe={isMe}
-                        onPress={
-                          entry && !isMe
-                            ? () => navigation.navigate('PublicProfile', { userId: entry.userId, username: entry.name })
-                            : undefined
-                        }
-                      />
-                    );
-                  })}
-                </View>
+                {/* Podium — only when no ties */}
+                {!hasPodiumTies && (
+                  <View style={styles.podiumRow}>
+                    {[2, 1, 3].map(rank => {
+                      const entry = top3[rank - 1];
+                      const isMe = entry?.userId === myUserId;
+                      return (
+                        <PodiumBox
+                          key={rank}
+                          rank={rank}
+                          entry={entry}
+                          isMe={isMe}
+                          onPress={
+                            entry && !isMe
+                              ? () => navigation.navigate('PublicProfile', { userId: entry.userId, username: entry.name })
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </View>
+                )}
 
+                {/* Pinned: current user's rank — shown right after podium if not in top 3 */}
+                {myEntry && (
+                  <>
+                    <View style={styles.myEntryRow}>
+                      <View style={[styles.rankBadge, { backgroundColor: '#111' }]}>
+                        <Text style={styles.rankBadgeText}>#{myEntry.rank}</Text>
+                      </View>
+                      <View style={[styles.rowAvatar, { borderColor: '#000', backgroundColor: '#e0e0e0' }]}>
+                        {myEntry.profileImageUrl ? (
+                          <Image
+                            source={{ uri: myEntry.profileImageUrl }}
+                            style={{ width: 32, height: 32, borderRadius: 16 }}
+                          />
+                        ) : (
+                          <Text style={[styles.rowAvatarText, { color: '#000' }]}>{myEntry.name[0]?.toUpperCase() || '?'}</Text>
+                        )}
+                      </View>
+                      <Text style={styles.myEntryName} numberOfLines={1}>{myEntry.name} (you)</Text>
+                      <Text style={styles.myEntryPoints}>{myEntry.points.toLocaleString()} pts</Text>
+                    </View>
+                    <View style={styles.myEntrySeparator} />
+                  </>
+                )}
               </>
             ) : null
           }
@@ -291,27 +316,7 @@ const LeaderboardScreen = () => {
             ) : null
           }
           renderItem={renderRow}
-          ListFooterComponent={
-            myEntry ? (
-              <View style={styles.myEntryRow}>
-                <View style={[styles.rankBadge, { backgroundColor: '#111' }]}>
-                  <Text style={styles.rankBadgeText}>#{myEntry.rank}</Text>
-                </View>
-                <View style={[styles.rowAvatar, { borderColor: '#000', backgroundColor: '#e0e0e0' }]}>
-                  {myEntry.profileImageUrl ? (
-                    <Image
-                      source={{ uri: myEntry.profileImageUrl }}
-                      style={{ width: 32, height: 32, borderRadius: 16 }}
-                    />
-                  ) : (
-                    <Text style={[styles.rowAvatarText, { color: '#000' }]}>{myEntry.name[0]?.toUpperCase() || '?'}</Text>
-                  )}
-                </View>
-                <Text style={styles.myEntryName} numberOfLines={1}>{myEntry.name} (you)</Text>
-                <Text style={styles.myEntryPoints}>{myEntry.points.toLocaleString()} pts</Text>
-              </View>
-            ) : null
-          }
+          ListFooterComponent={null}
         />
       )}
 
@@ -511,7 +516,7 @@ const styles = StyleSheet.create({
   rowPointsMe: { color: '#000', fontWeight: '700' },
   rowProfileBtn: { padding: 6 },
 
-  // My entry (you) — appended after list
+  // My entry (you) — pinned after podium
   myEntryRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -519,9 +524,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
     backgroundColor: '#fff',
-    marginTop: 2,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  myEntrySeparator: {
+    height: 6,
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   myEntryName: { flex: 1, color: '#000', fontSize: 14, fontWeight: '700' },
   myEntryPoints: { fontSize: 13, color: '#333', fontWeight: '700' },

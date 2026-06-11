@@ -13,7 +13,7 @@ import { profileApi, setupApi } from '../../api';
 import { useUser } from '../../context/UserContext';
 import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
-import type { Avatar, SocialLink, CompanionDto } from '../../types';
+import type { Avatar, SocialLink, CompanionDto, AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -27,12 +27,17 @@ const AVATAR_ACTIVITY: Record<string, string> = {
 
 const formatUnlockRequirement = (name: string, req: any): string => {
   if (!req || typeof req !== 'object') return req ? String(req) : '';
-  const { weeks, days_per_week, min_streak_days, max_relapses_per_month } = req as {
+  const { weeks, days_per_week, min_streak_days, min_logged_days, max_relapses_per_month } = req as {
     weeks?: number;
     days_per_week?: number;
     min_streak_days?: number;
+    min_logged_days?: number;
     max_relapses_per_month?: number;
   };
+  if (min_logged_days !== undefined) {
+    const relapses = max_relapses_per_month ?? 0;
+    return `Maintain no fap for ${min_logged_days} days with ${relapses} relapse${relapses !== 1 ? 's' : ''} allowed`;
+  }
   if (min_streak_days !== undefined) {
     const relapseClause = max_relapses_per_month !== undefined
       ? ` with at most ${max_relapses_per_month} relapse${max_relapses_per_month !== 1 ? 's' : ''} per month`
@@ -57,6 +62,87 @@ const fmtDateDisplay = (iso?: string) => {
   if (!iso) return '';
   const [y, m, d] = iso.split('T')[0].split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const renderWeeklyProgress = (p: WeeklyAvatarProgress) => {
+  // Only count consecutive qualifying past weeks from most recent backward
+  const consecutivePast: typeof p.weeks = [];
+  for (const w of p.weeks.slice(1)) {
+    if (w.met) consecutivePast.push(w);
+    else break;
+  }
+
+  // Current week + consecutive past, padded with empty slots to fill totalWeeks
+  const rows = [p.weeks[0], ...consecutivePast];
+  while (rows.length < p.totalWeeks) {
+    rows.push({ week: rows.length + 1, days: 0, required: p.requiredDaysPerWeek, met: false });
+  }
+  const displayRows = rows.slice(0, p.totalWeeks);
+
+  return (
+    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a', flexDirection: 'row', gap: 8 }}>
+      {displayRows.map((w, ri) => (
+        <View key={ri} style={{ flex: 1, flexDirection: 'row', gap: 2 }}>
+          {Array.from({ length: p.requiredDaysPerWeek }).map((_, i) => (
+            <View
+              key={i}
+              style={{ flex: 1, height: 5, borderRadius: 2.5, backgroundColor: i < w.days ? '#fff' : '#1a1a1a' }}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+};
+
+const renderPurityProgress = (p: PurityAvatarProgress) => {
+  const livesRemaining = Math.max(0, p.maxRelapsesAllowed - p.relapsesThisMonth);
+  return (
+    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a', gap: 10 }}>
+      {/* Lives row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {Array.from({ length: p.maxRelapsesAllowed }).map((_, i) => (
+            <Ionicons
+              key={i}
+              name={i < livesRemaining ? 'heart' : 'heart-outline'}
+              size={30}
+              color={i < livesRemaining ? '#3DFF86' : '#FF4444'}
+            />
+          ))}
+        </View>
+        <View style={{ gap: 2 }}>
+          <Text style={{ color: livesRemaining > 0 ? '#3DFF86' : '#FF4444', fontSize: 13, fontWeight: '700' }}>
+            {livesRemaining} life{livesRemaining !== 1 ? 's' : ''} remaining
+          </Text>
+          <Text style={{ color: '#444', fontSize: 10 }}>
+            {p.relapsesThisMonth} / {p.maxRelapsesAllowed} relapses used
+          </Text>
+        </View>
+      </View>
+      {/* Days logged row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flex: 1, height: 3, borderRadius: 1.5, backgroundColor: '#1a1a1a', overflow: 'hidden' }}>
+          <View style={{
+            width: `${Math.min(100, (p.loggedDays / p.requiredLoggedDays) * 100)}%` as any,
+            height: '100%',
+            backgroundColor: p.loggedDays >= p.requiredLoggedDays ? '#3DFF86' : '#555',
+            borderRadius: 1.5,
+          }} />
+        </View>
+        <Text style={{ color: '#444', fontSize: 9, width: 36, textAlign: 'right' }}>
+          {p.loggedDays}/{p.requiredLoggedDays}d
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+const renderAvatarProgress = (progress: AvatarProgress | undefined) => {
+  if (!progress || progress.type === 'default') return null;
+  if (progress.type === 'weekly') return renderWeeklyProgress(progress as WeeklyAvatarProgress);
+  if (progress.type === 'purity') return renderPurityProgress(progress as PurityAvatarProgress);
+  return null;
 };
 
 const EditProfileScreen = () => {
@@ -493,6 +579,7 @@ const EditProfileScreen = () => {
                           </TouchableOpacity>
                         </View>
                       ) : null}
+                      {isLocked ? renderAvatarProgress(item.progress) : null}
                     </View>
                   </TouchableOpacity>
                 );

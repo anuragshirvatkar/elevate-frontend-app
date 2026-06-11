@@ -9,7 +9,7 @@ import { useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const AVATAR_CARD_W = Math.floor((SCREEN_WIDTH - 32 * 2 - 12) / 2.5);
+const AVATAR_CARD_W = Math.floor((SCREEN_WIDTH - 32 * 2 - 12) / 2.0);
 
 const AVATAR_ACTIVITY: Record<string, string> = {
   renji: 'Craft', verin: 'Reading', aelius: 'Workout', kael: 'Purity',
@@ -17,7 +17,11 @@ const AVATAR_ACTIVITY: Record<string, string> = {
 
 const formatUnlockReq = (name: string, req: any): string => {
   if (!req || typeof req !== 'object') return req ? String(req) : '';
-  const { weeks, days_per_week, min_streak_days, max_relapses_per_month } = req as any;
+  const { weeks, days_per_week, min_streak_days, min_logged_days, max_relapses_per_month } = req as any;
+  if (min_logged_days !== undefined) {
+    const relapses = max_relapses_per_month ?? 0;
+    return `Maintain no fap for ${min_logged_days} days with ${relapses} relapse${relapses !== 1 ? 's' : ''} allowed`;
+  }
   if (min_streak_days !== undefined) {
     const clause = max_relapses_per_month !== undefined
       ? ` with ≤${max_relapses_per_month} relapse${max_relapses_per_month !== 1 ? 's' : ''}/mo`
@@ -32,6 +36,62 @@ import { useUser } from '../../context/UserContext';
 import { profileApi } from '../../api';
 import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
+import type { AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
+
+const renderCompactProgress = (progress: AvatarProgress) => {
+  if (progress.type === 'weekly') {
+    const { weeks, requiredDaysPerWeek, totalWeeks } = progress as WeeklyAvatarProgress;
+
+    // Only count consecutive qualifying past weeks from most recent backward
+    const consecutivePast: typeof weeks = [];
+    for (const w of weeks.slice(1)) {
+      if (w.met) consecutivePast.push(w);
+      else break;
+    }
+
+    // Build display: current week + consecutive past, padded with empty slots
+    const rows = [weeks[0], ...consecutivePast];
+    while (rows.length < totalWeeks) {
+      rows.push({ week: rows.length + 1, days: 0, required: requiredDaysPerWeek, met: false });
+    }
+    const displayRows = rows.slice(0, totalWeeks);
+
+    return (
+      <View style={{ marginTop: 5, flexDirection: 'row', gap: 6 }}>
+        {displayRows.map((w, ri) => (
+          <View key={ri} style={{ flex: 1, flexDirection: 'row', gap: 2 }}>
+            {Array.from({ length: requiredDaysPerWeek }).map((_, i) => (
+              <View
+                key={i}
+                style={{ flex: 1, height: 3, borderRadius: 1.5, backgroundColor: i < w.days ? '#fff' : '#1e1e1e' }}
+              />
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  }
+  if (progress.type === 'purity') {
+    const { relapsesThisMonth, maxRelapsesAllowed, loggedDays, requiredLoggedDays } = progress as PurityAvatarProgress;
+    const livesRemaining = Math.max(0, maxRelapsesAllowed - relapsesThisMonth);
+    return (
+      <View style={{ marginTop: 5, gap: 3 }}>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          {Array.from({ length: maxRelapsesAllowed }).map((_, i) => (
+            <Ionicons
+              key={i}
+              name={i < livesRemaining ? 'heart' : 'heart-outline'}
+              size={13}
+              color={i < livesRemaining ? '#3DFF86' : '#FF4444'}
+            />
+          ))}
+        </View>
+        <Text style={{ color: '#444', fontSize: 9 }}>{loggedDays}/{requiredLoggedDays}d</Text>
+      </View>
+    );
+  }
+  return null;
+};
 
 const SECTION_COLORS: Record<string, string> = {
   power: colors.power, craft: colors.craft, mind: colors.mind, purity: colors.purity,
@@ -279,6 +339,9 @@ const ProfileScreen = () => {
                     <View style={styles.avCarouselInfo}>
                       <Text style={[styles.avCarouselName, isLocked && { color: '#444' }]} numberOfLines={1}>{av.name}</Text>
                       {av.title ? <Text style={styles.avCarouselTitle} numberOfLines={1}>{av.title}</Text> : null}
+                      {isLocked && av.progress && av.progress.type !== 'default'
+                        ? renderCompactProgress(av.progress)
+                        : null}
                     </View>
                   </TouchableOpacity>
                 );
@@ -460,10 +523,10 @@ const styles = StyleSheet.create({
 
   // Avatar
   avatarCardRow: { flexDirection: 'row', gap: spacing.md },
-  avatarBodyWrap: { width: 96, position: 'relative' },
-  avatarFullBody: { width: 96, height: 152, borderRadius: 12, backgroundColor: '#111' },
+  avatarBodyWrap: { width: 116, position: 'relative' },
+  avatarFullBody: { width: 116, height: 190, borderRadius: 12, backgroundColor: '#111' },
   avatarBodyPlaceholder: {
-    width: 96, height: 152, borderRadius: 12,
+    width: 116, height: 190, borderRadius: 12,
     backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
   },
   avatarPicOverlay: {
@@ -561,9 +624,9 @@ const styles = StyleSheet.create({
   },
   avCarouselCardSelected: { borderColor: colors.text },
   avCarouselImgWrap: { position: 'relative', overflow: 'hidden' },
-  avCarouselImg: { height: 130, borderRadius: 0 },
+  avCarouselImg: { height: 190, borderRadius: 0 },
   avCarouselImgPlaceholder: {
-    height: 130, backgroundColor: '#111',
+    height: 190, backgroundColor: '#111',
     alignItems: 'center', justifyContent: 'center',
   },
   dimmed: { opacity: 0.35 },

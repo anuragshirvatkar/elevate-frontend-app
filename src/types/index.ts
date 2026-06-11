@@ -280,6 +280,37 @@ export interface AvatarHistory {
   createdAt: string;
 }
 
+export interface WeekEntry {
+  week: number;
+  days: number;
+  required: number;
+  met: boolean;
+  inProgress?: boolean;
+}
+
+export interface WeeklyAvatarProgress {
+  type: 'weekly';
+  currentWeek: number;
+  currentWeekDays: number;
+  totalWeeks: number;
+  requiredDaysPerWeek: number;
+  weeks: WeekEntry[];
+}
+
+export interface PurityAvatarProgress {
+  type: 'purity';
+  relapsesThisMonth: number;
+  maxRelapsesAllowed: number;
+  loggedDays: number;
+  requiredLoggedDays: number;
+}
+
+export interface DefaultAvatarProgress {
+  type: 'default';
+}
+
+export type AvatarProgress = WeeklyAvatarProgress | PurityAvatarProgress | DefaultAvatarProgress;
+
 export interface Avatar {
   id: string;
   name: string;
@@ -297,6 +328,7 @@ export interface Avatar {
   unlockedAt?: string;
   revokedAt?: string;
   lastReason?: string;
+  progress?: AvatarProgress;
   history?: AvatarHistory[];
 }
 
