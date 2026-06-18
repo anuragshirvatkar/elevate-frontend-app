@@ -1,18 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, Platform, Modal, TextInput, FlatList,
-  ActivityIndicator, KeyboardAvoidingView,
+  ActivityIndicator, KeyboardAvoidingView, BackHandler,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useNavigation } from '@react-navigation/native';
-import { colors, spacing } from '../../theme';
+import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
+import { colors, spacing, typography, radius } from '../../theme';
+import { getActivityDisplayName, isSameActivity } from '../../utils/activityDisplayName';
 import { useAlert } from '../../context/AlertContext';
 import { setupApi } from '../../api/setup';
 import { activitiesApi } from '../../api/activities';
-import { booksApi } from '../../api/books';
+import { booksApi, getBookSummaryPdfUrl } from '../../api/books';
 import type { SectionSetup, MindSetup, SetupOptionsResponse, ActivityDto, BookDto } from '../../types';
 
 type Tab = 'Power' | 'Craft' | 'Mind';
@@ -20,7 +24,8 @@ const TABS: Tab[] = ['Power', 'Craft', 'Mind'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const MAX_REST_DAYS: Record<'power' | 'craft', number> = { power: 2, craft: 1 };
-const MAX_ACTIVITIES = 3;
+
+type PillarsRouteParams = { tab?: Tab };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,13 +83,44 @@ interface MindState {
     author?: string;
     isCompleted: boolean;
     aiSummary?: string | null;
+    summaryPdfUrl?: string | null;
+    summaryPdfFilename?: string | null;
   }>;
 }
+
+const buildPillarsSnapshot = (power: SectionState, craft: SectionState, mind: MindState) => JSON.stringify({
+  power: {
+    preferredTime: power.preferredTime ?? null,
+    restDays: [...power.restDays].sort(),
+    activities: power.activities.map((a) => ({
+      activityId: a.activityId,
+      isPrimary: a.isPrimary,
+    })),
+  },
+  craft: {
+    preferredTime: craft.preferredTime ?? null,
+    restDays: [...craft.restDays].sort(),
+    activities: craft.activities.map((a) => ({
+      activityId: a.activityId,
+      isPrimary: a.isPrimary,
+    })),
+  },
+  mind: {
+    isActive: mind.isActive,
+    preferredTime: mind.preferredTime ?? null,
+    restDays: [...mind.restDays].sort(),
+    books: mind.books.map((b) => ({
+      userBookId: b.userBookId,
+      isCompleted: !!b.isCompleted,
+    })),
+  },
+});
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const PillarsScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute<RouteProp<{ Pillars: PillarsRouteParams }, 'Pillars'>>();
   const { showAlert } = useAlert();
   const [activeTab, setActiveTab] = useState<Tab>('Power');
   const [loading, setLoading] = useState(true);
@@ -106,62 +142,136 @@ const PillarsScreen = () => {
   const [showActivityPicker, setShowActivityPicker] = useState(false);
   const [activityPickerSection, setActivityPickerSection] = useState<'power' | 'craft'>('power');
   const [pickerOptions, setPickerOptions] = useState<ActivityDto[]>([]);
-  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerCustomIds, setPickerCustomIds] = useState<Set<string>>(new Set());
+  const [pickerCustomModalVisible, setPickerCustomModalVisible] = useState(false);
+  const [pickerCustomName, setPickerCustomName] = useState('');
+  const [pickerCreatingCustom, setPickerCreatingCustom] = useState(false);
   const [pickerLoading, setPickerLoading] = useState(false);
-  const [creatingCustom, setCreatingCustom] = useState(false);
 
   // ── Unsaved changes guard ─────────────────────────────────────────────────
 
   const hasUnsavedChanges = useRef(false);
+  const baselineSnapshot = useRef('');
+  const isSavingRef = useRef(false);
   const mindEnabledUnsaved = useRef(false);
+  const saveAllRef = useRef<(() => Promise<boolean>) | null>(null);
+  const loadAllRef = useRef<(() => Promise<void>) | null>(null);
 
-  const handleTabChange = (tab: Tab) => {
-    if (activeTab === 'Mind' && mindEnabledUnsaved.current && mind.books.length === 0) {
+  const syncDirtyState = useCallback((p: SectionState, c: SectionState, m: MindState) => {
+    hasUnsavedChanges.current = buildPillarsSnapshot(p, c, m) !== baselineSnapshot.current;
+  }, []);
+
+  const setBaseline = useCallback((p: SectionState, c: SectionState, m: MindState) => {
+    baselineSnapshot.current = buildPillarsSnapshot(p, c, m);
+    hasUnsavedChanges.current = false;
+  }, []);
+
+  const resetMindEnableDraft = useCallback(() => {
+    if (mindEnabledUnsaved.current) {
       setMind((s) => ({ ...s, isActive: false }));
       mindEnabledUnsaved.current = false;
     }
-    setActiveTab(tab);
+  }, []);
+
+  const promptUnsavedChanges = useCallback((onProceed: () => void) => {
+    showAlert(
+      'Unsaved Changes',
+      'You have unsaved changes. What would you like to do?',
+      [
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: async () => {
+            resetMindEnableDraft();
+            await loadAllRef.current?.();
+            hasUnsavedChanges.current = false;
+            onProceed();
+          },
+        },
+        {
+          text: 'Save',
+          onPress: async () => {
+            isSavingRef.current = true;
+            const ok = await saveAllRef.current?.();
+            isSavingRef.current = false;
+            if (ok) onProceed();
+          },
+        },
+      ],
+    );
+  }, [resetMindEnableDraft, showAlert]);
+
+  const handleBack = useCallback(() => {
+    if (hasUnsavedChanges.current && !isSavingRef.current) {
+      promptUnsavedChanges(() => navigation.goBack());
+      return;
+    }
+    navigation.goBack();
+  }, [navigation, promptUnsavedChanges]);
+
+  useEffect(() => {
+    if (loading) return;
+    syncDirtyState(power, craft, mind);
+  }, [power, craft, mind, loading, syncDirtyState]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+        if (!hasUnsavedChanges.current || isSavingRef.current) return;
+        e.preventDefault();
+        promptUnsavedChanges(() => navigation.dispatch(e.data.action));
+      });
+
+      const backHandler = Platform.OS === 'android'
+        ? BackHandler.addEventListener('hardwareBackPress', () => {
+            if (hasUnsavedChanges.current && !isSavingRef.current) {
+              promptUnsavedChanges(() => navigation.goBack());
+              return true;
+            }
+            return false;
+          })
+        : null;
+
+      return () => {
+        unsubscribe();
+        backHandler?.remove();
+      };
+    }, [navigation, promptUnsavedChanges]),
+  );
+
+  const handleTabChange = (tab: Tab) => {
+    if (tab === activeTab) return;
+
+    const applyTabChange = () => {
+      if (activeTab === 'Mind' && mindEnabledUnsaved.current && mind.books.length === 0) {
+        setMind((s) => ({ ...s, isActive: false }));
+        mindEnabledUnsaved.current = false;
+      }
+      setActiveTab(tab);
+    };
+
+    if (hasUnsavedChanges.current && !isSavingRef.current) {
+      promptUnsavedChanges(applyTabChange);
+      return;
+    }
+
+    applyTabChange();
   };
 
   useEffect(() => {
-    hasUnsavedChanges.current = true;
-  }, [power, craft, mind]);
-
-  useEffect(() => {
-    const unsubscribe = (navigation as any).addListener('beforeRemove', (e: any) => {
-      if (!hasUnsavedChanges.current) return;
-      e.preventDefault();
-      showAlert(
-        'Unsaved Changes',
-        'You have unsaved changes. Do you want to save before leaving?',
-        [
-          {
-            text: 'Discard',
-            style: 'destructive',
-            onPress: () => {
-              hasUnsavedChanges.current = false;
-              if (mindEnabledUnsaved.current && mind.books.length === 0) {
-                setMind((s) => ({ ...s, isActive: false }));
-                mindEnabledUnsaved.current = false;
-              }
-              (navigation as any).dispatch(e.data.action);
-            },
-          },
-          {
-            text: 'Save',
-            onPress: async () => { await save(); hasUnsavedChanges.current = false; (navigation as any).dispatch(e.data.action); },
-          },
-        ]
-      );
-    });
-    return unsubscribe;
-  }, [navigation, power, craft, mind]);
+    const tab = route.params?.tab;
+    if (tab && TABS.includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [route.params?.tab]);
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    loadAll();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadAll();
+    }, []),
+  );
 
   const loadAll = async () => {
     setLoading(true);
@@ -172,27 +282,27 @@ const PillarsScreen = () => {
         setupApi.getMind(),
       ]);
       const p = powerRes.data as SectionSetup;
-      setPower({
+      const loadedPower: SectionState = {
         preferredTime: p.preferredTime,
         restDays: p.restDays ?? [],
-        activities: (p.activities ?? []).map((a) => ({
-          activityId: a.activityId,
+        activities: (p.activities ?? []).map((a: { activityId?: string; id?: string; name: string; isPrimary?: boolean }) => ({
+          activityId: a.activityId ?? a.id ?? '',
           name: a.name,
-          isPrimary: a.isPrimary,
-        })),
-      });
+          isPrimary: a.isPrimary ?? false,
+        })).filter((a) => a.activityId && a.name),
+      };
       const c = craftRes.data as SectionSetup;
-      setCraft({
+      const loadedCraft: SectionState = {
         preferredTime: c.preferredTime,
         restDays: c.restDays ?? [],
-        activities: (c.activities ?? []).map((a) => ({
-          activityId: a.activityId,
+        activities: (c.activities ?? []).map((a: { activityId?: string; id?: string; name: string; isPrimary?: boolean }) => ({
+          activityId: a.activityId ?? a.id ?? '',
           name: a.name,
-          isPrimary: a.isPrimary,
-        })),
-      });
+          isPrimary: a.isPrimary ?? false,
+        })).filter((a) => a.activityId && a.name),
+      };
       const mn = mindRes.data as MindSetup;
-      setMind({
+      const loadedMind: MindState = {
         isActive: mn.isActive ?? true,
         preferredTime: mn.preferredTime,
         restDays: mn.restDays ?? [],
@@ -200,17 +310,24 @@ const PillarsScreen = () => {
           userBookId: b.userBookId,
           title: b.title,
           author: b.author,
-          isCompleted: b.isCompleted,
+          isCompleted: !!b.isCompleted,
           aiSummary: b.aiSummary ?? null,
+          summaryPdfUrl: b.summaryPdfUrl ?? null,
+          summaryPdfFilename: b.summaryPdfFilename ?? null,
         })),
-      });
-      hasUnsavedChanges.current = false;
+      };
+      setPower(loadedPower);
+      setCraft(loadedCraft);
+      setMind(loadedMind);
+      setBaseline(loadedPower, loadedCraft, loadedMind);
     } catch {
       showAlert('Error', 'Failed to load pillar settings.');
     } finally {
       setLoading(false);
     }
   };
+
+  loadAllRef.current = loadAll;
 
   // ── Rest days ─────────────────────────────────────────────────────────────
 
@@ -263,19 +380,34 @@ const PillarsScreen = () => {
 
   const openActivityPicker = async (section: 'power' | 'craft') => {
     setActivityPickerSection(section);
-    setPickerSearch('');
+    setPickerCustomName('');
     setPickerLoading(true);
     setShowActivityPicker(true);
     try {
-      let opts = optionsCache.current;
-      if (!opts) {
-        const res = await setupApi.getOptions();
-        opts = (res.data as SetupOptionsResponse).activities;
-        optionsCache.current = opts;
+      const [{ data: optionsData }, { data: customData }] = await Promise.all([
+        setupApi.getOptions(),
+        activitiesApi.getCustom(),
+      ]);
+      if (!optionsCache.current) {
+        optionsCache.current = optionsData.activities;
+      }
+      const sectionOptions = optionsData.activities[section] ?? [];
+      const sectionCustom = (customData as Array<{ id: string; name: string; section: string }>)
+        .filter((a) => a.section === section);
+      const customIds = new Set(sectionCustom.map((a) => a.id));
+      const merged = [...sectionOptions];
+      for (const custom of sectionCustom) {
+        if (!merged.some((a) => a.id === custom.id)) {
+          merged.push({ id: custom.id, name: custom.name, section: custom.section as ActivityDto['section'] });
+        }
       }
       const current = section === 'power' ? power.activities : craft.activities;
-      const currentIds = new Set(current.map((a) => a.activityId));
-      setPickerOptions((opts[section] ?? []).filter((a) => !currentIds.has(a.id)));
+      setPickerCustomIds(customIds);
+      setPickerOptions(merged.filter((option) => !current.some((selected) => isSameActivity(
+        section,
+        { activityId: selected.activityId, name: selected.name },
+        { id: option.id, name: option.name },
+      ))));
     } catch {
       showAlert('Error', 'Failed to load activities.');
       setShowActivityPicker(false);
@@ -286,37 +418,54 @@ const PillarsScreen = () => {
 
   const addActivityFromPicker = (activity: ActivityDto) => {
     const setter = activityPickerSection === 'power' ? setPower : setCraft;
-    setter((s) => ({
-      ...s,
-      activities: [
-        ...s.activities,
-        { activityId: activity.id, name: activity.name, isPrimary: false },
-      ],
-    }));
+    setter((s) => {
+      if (s.activities.some((a) => isSameActivity(activityPickerSection, a, { id: activity.id, name: activity.name }))) {
+        return s;
+      }
+      return {
+        ...s,
+        activities: [
+          ...s.activities,
+          { activityId: activity.id, name: activity.name, isPrimary: false },
+        ],
+      };
+    });
     setShowActivityPicker(false);
   };
 
   const createCustomActivity = async () => {
-    const name = pickerSearch.trim();
+    const name = pickerCustomName.trim();
     if (!name) return;
-    setCreatingCustom(true);
+    const state = activityPickerSection === 'power' ? power : craft;
+    if (state.activities.some((a) => isSameActivity(activityPickerSection, a, { name }))) {
+      showAlert('Already added', 'This activity is already in your list.');
+      return;
+    }
+    setPickerCreatingCustom(true);
     try {
       const res = await activitiesApi.createCustom(name, activityPickerSection);
       const created = res.data;
       const setter = activityPickerSection === 'power' ? setPower : setCraft;
-      setter((s) => ({
-        ...s,
-        activities: [
-          ...s.activities,
-          { activityId: created.id, name: created.name, isPrimary: false },
-        ],
-      }));
+      setter((s) => {
+        if (s.activities.some((a) => isSameActivity(activityPickerSection, a, { id: created.id, name: created.name }))) {
+          return s;
+        }
+        return {
+          ...s,
+          activities: [
+            ...s.activities,
+            { activityId: created.id, name: created.name, isPrimary: false },
+          ],
+        };
+      });
+      setPickerCustomModalVisible(false);
       setShowActivityPicker(false);
+      setPickerCustomName('');
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to create activity.';
       showAlert('Error', msg);
     } finally {
-      setCreatingCustom(false);
+      setPickerCreatingCustom(false);
     }
   };
 
@@ -407,7 +556,15 @@ const PillarsScreen = () => {
   const [editSummaryBookId, setEditSummaryBookId] = useState<string | null>(null);
   const [editSummaryText, setEditSummaryText] = useState('');
   const [savingSummary, setSavingSummary] = useState(false);
-  const [viewSummaryBook, setViewSummaryBook] = useState<{ title: string; summary: string } | null>(null);
+  const [completingBookId, setCompletingBookId] = useState<string | null>(null);
+  const [viewSummaryBook, setViewSummaryBook] = useState<{
+    title: string;
+    summary: string;
+    userBookId: string;
+    filename: string;
+    loading: boolean;
+  } | null>(null);
+  const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
 
   const openBookPicker = async () => {
     setBookPickerSearch('');
@@ -460,7 +617,7 @@ const PillarsScreen = () => {
           ...s,
           books: freshBooks.map((b) => ({
             userBookId: b.userBookId, title: b.title, author: b.author,
-            isCompleted: b.isCompleted, aiSummary: b.aiSummary ?? null,
+            isCompleted: b.isCompleted, aiSummary: b.aiSummary ?? null, summaryPdfUrl: b.summaryPdfUrl ?? null,
           })),
         }));
       } else {
@@ -541,15 +698,97 @@ const PillarsScreen = () => {
         {
           text: 'Mark Complete',
           style: 'default',
-          onPress: () => setMind((s) => ({
-            ...s,
-            books: s.books.map((b) =>
-              b.userBookId === userBookId ? { ...b, isCompleted: true } : b
-            ),
-          })),
+          onPress: async () => {
+            setMind((s) => ({
+              ...s,
+              books: s.books.map((b) =>
+                b.userBookId === userBookId ? { ...b, isCompleted: true } : b
+              ),
+            }));
+            setCompletingBookId(userBookId);
+            try {
+              await booksApi.markComplete(userBookId);
+            } catch {
+              setMind((s) => ({
+                ...s,
+                books: s.books.map((b) =>
+                  b.userBookId === userBookId ? { ...b, isCompleted: false } : b
+                ),
+              }));
+              showAlert('Error', 'Failed to mark book complete.');
+            } finally {
+              setCompletingBookId(null);
+            }
+          },
         },
       ]
     );
+  };
+
+  const downloadSummaryPdfToCache = async (userBookId: string, filename: string) => {
+    const token = await AsyncStorage.getItem('accessToken');
+    const url = getBookSummaryPdfUrl(userBookId);
+    const localUri = `${FileSystem.cacheDirectory}${filename}`;
+    const result = await FileSystem.downloadAsync(url, localUri, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return result.uri;
+  };
+
+  const openSummaryView = async (userBookId: string, title: string, filename: string) => {
+    setViewSummaryBook({ title, summary: '', userBookId, filename, loading: true });
+    try {
+      const cached = mind.books.find((b) => b.userBookId === userBookId);
+      if (cached?.aiSummary) {
+        setViewSummaryBook({
+          title,
+          summary: cached.aiSummary,
+          userBookId,
+          filename,
+          loading: false,
+        });
+        return;
+      }
+
+      const { data } = await booksApi.getSummary(userBookId);
+      setMind((s) => ({
+        ...s,
+        books: s.books.map((b) => b.userBookId === userBookId
+          ? {
+            ...b,
+            aiSummary: data.summary,
+            summaryPdfUrl: data.pdfUrl,
+            summaryPdfFilename: data.pdfFilename,
+          }
+          : b),
+      }));
+      setViewSummaryBook({
+        title: data.bookName,
+        summary: data.summary,
+        userBookId,
+        filename: data.pdfFilename,
+        loading: false,
+      });
+    } catch {
+      setViewSummaryBook(null);
+      showAlert('Error', 'Could not load summary.');
+    }
+  };
+
+  const downloadSummaryPdf = async (userBookId: string, filename: string) => {
+    setDownloadingPdfId(userBookId);
+    try {
+      const localUri = await downloadSummaryPdfToCache(userBookId, filename);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(localUri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
+      } else {
+        showAlert('Saved', 'Summary PDF downloaded.');
+      }
+    } catch {
+      showAlert('Error', 'Could not download summary PDF.');
+    } finally {
+      setDownloadingPdfId(null);
+    }
   };
 
   const handleGenerateSummary = async (userBookId: string) => {
@@ -561,12 +800,17 @@ const PillarsScreen = () => {
         showAlert('Cannot Generate Summary', res.message || 'Not enough reflections to generate summary.');
         return;
       }
+      const pdfUrl = res.pdfUrl ?? getBookSummaryPdfUrl(userBookId);
+      const pdfFilename = res.pdfFilename ?? `${userBookId}-summary.pdf`;
       const summary = res.summary ?? '';
       setMind((s) => ({
         ...s,
-        books: s.books.map((b) => b.userBookId === userBookId ? { ...b, aiSummary: summary } : b),
+        books: s.books.map((b) => b.userBookId === userBookId
+          ? { ...b, summaryPdfUrl: pdfUrl, summaryPdfFilename: pdfFilename, aiSummary: summary || b.aiSummary }
+          : b),
       }));
-      if (summary) setViewSummaryBook({ title: mind.books.find(b => b.userBookId === userBookId)?.title ?? '', summary });
+      const bookTitle = mind.books.find((b) => b.userBookId === userBookId)?.title ?? '';
+      await openSummaryView(userBookId, bookTitle, pdfFilename);
     } catch (err: any) {
       showAlert('Error', err?.response?.data?.message || 'Not enough reflections to generate summary.');
     } finally {
@@ -586,7 +830,13 @@ const PillarsScreen = () => {
       await booksApi.editSummary(editSummaryBookId, editSummaryText);
       setMind((s) => ({
         ...s,
-        books: s.books.map((b) => b.userBookId === editSummaryBookId ? { ...b, aiSummary: editSummaryText } : b),
+        books: s.books.map((b) => b.userBookId === editSummaryBookId
+          ? {
+            ...b,
+            aiSummary: editSummaryText,
+            summaryPdfUrl: b.summaryPdfUrl ?? getBookSummaryPdfUrl(editSummaryBookId),
+          }
+          : b),
       }));
       setEditSummaryBookId(null);
     } catch {
@@ -656,6 +906,40 @@ const PillarsScreen = () => {
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
+  const saveAll = async (): Promise<boolean> => {
+    setSaving(true);
+    try {
+      await Promise.all([
+        setupApi.putSection('power', {
+          preferredTime: power.preferredTime,
+          restDays: power.restDays,
+          activities: power.activities.map((a) => ({ activityId: a.activityId, isPrimary: a.isPrimary })),
+        }),
+        setupApi.putSection('craft', {
+          preferredTime: craft.preferredTime,
+          restDays: craft.restDays,
+          activities: craft.activities.map((a) => ({ activityId: a.activityId, isPrimary: a.isPrimary })),
+        }),
+        setupApi.putMind({
+          isActive: mind.isActive,
+          preferredTime: mind.preferredTime,
+          restDays: mind.restDays,
+          books: mind.books.map((b) => ({ userBookId: b.userBookId, isCompleted: b.isCompleted })),
+        }),
+      ]);
+      setBaseline(power, craft, mind);
+      mindEnabledUnsaved.current = false;
+      return true;
+    } catch {
+      showAlert('Error', 'Failed to save changes.');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  saveAllRef.current = saveAll;
+
   const save = async () => {
     setSaving(true);
     try {
@@ -679,6 +963,8 @@ const PillarsScreen = () => {
           books: mind.books.map((b) => ({ userBookId: b.userBookId, isCompleted: b.isCompleted })),
         });
       }
+      setBaseline(power, craft, mind);
+      mindEnabledUnsaved.current = false;
       showAlert('Saved', 'Changes saved successfully.');
     } catch {
       showAlert('Error', 'Failed to save changes.');
@@ -715,10 +1001,6 @@ const PillarsScreen = () => {
     const tab: Tab = section === 'power' ? 'Power' : 'Craft';
 
     const handleAddActivity = () => {
-      if (state.activities.length >= MAX_ACTIVITIES) {
-        showAlert('Maximum reached', 'You can have at most 3 activities. Remove one first to add a new one.');
-        return;
-      }
       openActivityPicker(section);
     };
 
@@ -754,7 +1036,6 @@ const PillarsScreen = () => {
           <View style={s.groupLabelRow}>
             <Text style={s.groupLabel}>Activities</Text>
             <View style={s.rowRight}>
-              <Text style={s.groupHint}>{state.activities.length}/{MAX_ACTIVITIES}</Text>
               <TouchableOpacity style={s.addBookBtn} onPress={handleAddActivity} activeOpacity={0.7}>
                 <Ionicons name="add" size={14} color="#000" />
                 <Text style={s.addBookBtnText}>Add</Text>
@@ -774,7 +1055,9 @@ const PillarsScreen = () => {
               >
                 <Ionicons name="remove-circle" size={18} color="#333" />
               </TouchableOpacity>
-              <Text style={[s.rowLabel, { flex: 1, marginLeft: 10 }]}>{a.name}</Text>
+              <Text style={[s.rowLabel, { flex: 1, marginLeft: 10 }]}>
+                {getActivityDisplayName(section, a.name)}
+              </Text>
               <View style={s.rowRight}>
                 <Text style={s.rowValueSmall}>Primary</Text>
                 <Switch
@@ -928,44 +1211,51 @@ const PillarsScreen = () => {
                   ) : (
                     <>
                       <Text style={s.rowValueSmall}>Mark Complete</Text>
-                      <Switch
-                        value={false}
-                        onValueChange={() => toggleBook(b.userBookId)}
-                        trackColor={{ false: '#1a1a1a', true: '#fff' }}
-                        thumbColor={'#555'}
-                        ios_backgroundColor="#1a1a1a"
-                      />
+                      {completingBookId === b.userBookId ? (
+                        <ActivityIndicator size="small" color="#888" />
+                      ) : (
+                        <Switch
+                          value={false}
+                          onValueChange={() => toggleBook(b.userBookId)}
+                          trackColor={{ false: '#1a1a1a', true: '#fff' }}
+                          thumbColor={'#555'}
+                          ios_backgroundColor="#1a1a1a"
+                          disabled={completingBookId === b.userBookId}
+                        />
+                      )}
                     </>
                   )}
                 </View>
               </View>
 
-              {/* AI summary display */}
-              {b.aiSummary ? (
-                <View style={s.summaryBox}>
-                  <Text style={s.summaryText} numberOfLines={3}>{b.aiSummary}</Text>
-                  <View style={s.summaryActions}>
-                    <TouchableOpacity
-                      onPress={() => setViewSummaryBook({ title: b.title, summary: b.aiSummary! })}
-                      style={s.summaryBtn}
-                    >
-                      <Ionicons name="eye-outline" size={13} color="#888" />
-                      <Text style={s.summaryBtnText}>View</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => openEditSummary(b.userBookId, b.aiSummary!)}
-                      style={s.summaryBtn}
-                    >
-                      <Ionicons name="pencil-outline" size={13} color="#888" />
-                      <Text style={s.summaryBtnText}>Edit</Text>
-                    </TouchableOpacity>
-                  </View>
+              {/* PDF summary row */}
+              {b.summaryPdfUrl ? (
+                <View style={s.pdfRow}>
+                  <Ionicons name="document-text-outline" size={13} color="#555" />
+                  <Text style={s.pdfName} numberOfLines={1}>{b.summaryPdfFilename ?? `${b.title}-summary.pdf`}</Text>
+                  <TouchableOpacity
+                    onPress={() => openSummaryView(b.userBookId, b.title, b.summaryPdfFilename ?? `${b.userBookId}-summary.pdf`)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="eye-outline" size={15} color="#888" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => downloadSummaryPdf(b.userBookId, b.summaryPdfFilename ?? `${b.userBookId}-summary.pdf`)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    disabled={downloadingPdfId === b.userBookId}
+                  >
+                    {downloadingPdfId === b.userBookId ? (
+                      <ActivityIndicator size="small" color="#888" />
+                    ) : (
+                      <Ionicons name="download-outline" size={15} color="#888" />
+                    )}
+                  </TouchableOpacity>
                 </View>
               ) : null}
 
               {/* Action row */}
               <View style={s.bookActions}>
-                {b.isCompleted && (
+                {b.isCompleted && !b.summaryPdfUrl && (
                   <TouchableOpacity
                     style={s.summaryGenBtn}
                     onPress={() => handleGenerateSummary(b.userBookId)}
@@ -977,17 +1267,19 @@ const PillarsScreen = () => {
                     ) : (
                       <>
                         <Ionicons name="sparkles-outline" size={13} color="#000" />
-                        <Text style={s.summaryGenBtnText}>{b.aiSummary ? 'Regenerate Summary' : 'Generate AI Summary'}</Text>
+                        <Text style={s.summaryGenBtnText}>{b.summaryPdfUrl ? 'Regenerate Summary' : 'Generate AI Summary'}</Text>
                       </>
                     )}
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  onPress={() => removeBook(b.userBookId)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#333" />
-                </TouchableOpacity>
+                {!b.isCompleted && !b.summaryPdfUrl && (
+                  <TouchableOpacity
+                    onPress={() => removeBook(b.userBookId)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#333" />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           ))
@@ -1002,13 +1294,6 @@ const PillarsScreen = () => {
 
   // ── Activity Picker Modal ─────────────────────────────────────────────────
 
-  const filteredOptions = pickerOptions.filter((a) =>
-    a.name.toLowerCase().includes(pickerSearch.toLowerCase())
-  );
-  const showCreateCustom =
-    pickerSearch.trim().length > 0 &&
-    !filteredOptions.some((a) => a.name.toLowerCase() === pickerSearch.trim().toLowerCase());
-
   const renderActivityPicker = () => (
     <Modal
       visible={showActivityPicker}
@@ -1021,31 +1306,11 @@ const PillarsScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={s.pickerSheet}>
-          {/* Sheet header */}
           <View style={s.pickerHeader}>
             <Text style={s.pickerTitle}>Add Activity</Text>
             <TouchableOpacity onPress={() => setShowActivityPicker(false)}>
               <Ionicons name="close" size={22} color={colors.text} />
             </TouchableOpacity>
-          </View>
-
-          {/* Search / custom name */}
-          <View style={s.searchRow}>
-            <Ionicons name="search-outline" size={16} color="#444" />
-            <TextInput
-              style={s.searchInput}
-              placeholder="Search or type custom name…"
-              placeholderTextColor="#444"
-              value={pickerSearch}
-              onChangeText={setPickerSearch}
-              autoCapitalize="words"
-              returnKeyType="done"
-            />
-            {pickerSearch.length > 0 && (
-              <TouchableOpacity onPress={() => setPickerSearch('')}>
-                <Ionicons name="close-circle" size={16} color="#444" />
-              </TouchableOpacity>
-            )}
           </View>
 
           {pickerLoading ? (
@@ -1054,51 +1319,74 @@ const PillarsScreen = () => {
             </View>
           ) : (
             <FlatList
-              data={filteredOptions}
-              keyExtractor={(a) => a.id}
+              data={pickerOptions}
+              keyExtractor={(item) => item.id}
               style={s.pickerList}
               keyboardShouldPersistTaps="handled"
-              ListHeaderComponent={
-                showCreateCustom ? (
-                  <TouchableOpacity
-                    style={s.createCustomRow}
-                    onPress={createCustomActivity}
-                    activeOpacity={0.7}
-                    disabled={creatingCustom}
-                  >
-                    {creatingCustom ? (
-                      <ActivityIndicator color={colors.text} size="small" />
-                    ) : (
-                      <Ionicons name="add-circle-outline" size={18} color={colors.text} />
-                    )}
-                    <Text style={s.createCustomText}>
-                      Create "{pickerSearch.trim()}"
-                    </Text>
-                  </TouchableOpacity>
-                ) : null
-              }
-              renderItem={({ item, index }) => (
+              showsVerticalScrollIndicator={false}
+              ListFooterComponent={(
                 <TouchableOpacity
-                  style={[
-                    s.pickerRow,
-                    index < filteredOptions.length - 1 && s.rowBorder,
-                  ]}
+                  style={s.pickerListRow}
+                  onPress={() => setPickerCustomModalVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.textSecondary} />
+                  <Text style={s.pickerListCustomText}>Add custom activity</Text>
+                </TouchableOpacity>
+              )}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={s.pickerListRow}
                   onPress={() => addActivityFromPicker(item)}
                   activeOpacity={0.7}
                 >
-                  <Text style={s.pickerRowText}>{item.name}</Text>
-                  <Ionicons name="add" size={18} color="#444" />
+                  <Text style={s.pickerListText}>{getActivityDisplayName(activityPickerSection, item.name)}</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#444" />
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={
-                !showCreateCustom ? (
-                  <Text style={s.emptyText}>No activities found.</Text>
-                ) : null
-              }
             />
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={pickerCustomModalVisible}
+        onRequestClose={() => { setPickerCustomModalVisible(false); setPickerCustomName(''); }}
+      >
+        <View style={s.customModalOverlay}>
+          <View style={s.customModalContent}>
+            <Text style={s.customModalTitle}>Add custom activity</Text>
+            <TextInput
+              style={s.customModalInput}
+              placeholder={activityPickerSection === 'power' ? 'e.g. Gym...' : 'e.g. Work...'}
+              placeholderTextColor={colors.textMuted}
+              value={pickerCustomName}
+              onChangeText={setPickerCustomName}
+              autoFocus
+              maxLength={30}
+            />
+            <View style={s.customModalActions}>
+              <TouchableOpacity
+                style={s.customModalCancel}
+                onPress={() => { setPickerCustomModalVisible(false); setPickerCustomName(''); }}
+              >
+                <Text style={s.customModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.customModalConfirm}
+                onPress={createCustomActivity}
+                disabled={pickerCreatingCustom || !pickerCustomName.trim()}
+              >
+                <Text style={s.customModalConfirmText}>
+                  {pickerCreatingCustom ? 'Creating...' : 'Add'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 
@@ -1107,7 +1395,7 @@ const PillarsScreen = () => {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.back}>
+        <TouchableOpacity onPress={handleBack} style={s.back}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }} />
@@ -1295,21 +1583,54 @@ const PillarsScreen = () => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── View Summary Modal ── */}
-      <Modal visible={!!viewSummaryBook} transparent animationType="fade" onRequestClose={() => setViewSummaryBook(null)}>
-        <TouchableOpacity style={s.summaryOverlay} activeOpacity={1} onPress={() => setViewSummaryBook(null)}>
-          <View style={s.summarySheet} onStartShouldSetResponder={() => true}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={[s.pickerTitle, { flex: 1 }]}>{viewSummaryBook?.title}</Text>
-              <TouchableOpacity onPress={() => setViewSummaryBook(null)}>
-                <Ionicons name="close" size={20} color="#555" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 320 }}>
-              <Text style={s.summaryFullText}>{viewSummaryBook?.summary}</Text>
-            </ScrollView>
+      {/* ── Summary View Modal ── */}
+      <Modal visible={!!viewSummaryBook} animationType="slide" onRequestClose={() => setViewSummaryBook(null)}>
+        <SafeAreaView style={s.pdfModalContainer}>
+          <View style={s.pdfModalHeader}>
+            <Text style={s.pdfModalTitle} numberOfLines={1}>
+              {viewSummaryBook?.title} — Reading Summary
+            </Text>
+            <TouchableOpacity onPress={() => setViewSummaryBook(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={colors.text} />
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+          {viewSummaryBook?.loading ? (
+            <View style={s.pdfLoading}>
+              <ActivityIndicator size="large" color={colors.text} />
+            </View>
+          ) : (
+            <>
+              <ScrollView
+                style={s.summaryViewScroll}
+                contentContainerStyle={s.summaryViewContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={s.summaryFullText}>
+                  {viewSummaryBook?.summary?.trim()
+                    ? viewSummaryBook.summary
+                    : 'Summary text is not available. You can still download the PDF below.'}
+                </Text>
+              </ScrollView>
+              {viewSummaryBook?.userBookId ? (
+                <TouchableOpacity
+                  style={s.summaryDownloadBtn}
+                  onPress={() => downloadSummaryPdf(viewSummaryBook.userBookId, viewSummaryBook.filename)}
+                  disabled={downloadingPdfId === viewSummaryBook.userBookId}
+                  activeOpacity={0.8}
+                >
+                  {downloadingPdfId === viewSummaryBook.userBookId ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
+                    <>
+                      <Ionicons name="download-outline" size={16} color="#000" />
+                      <Text style={s.summaryDownloadBtnText}>Download PDF</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
+        </SafeAreaView>
       </Modal>
 
       {/* ── Enable Mind Modal ── */}
@@ -1640,6 +1961,65 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: colors.text, paddingVertical: 0 },
   pickerLoading: { paddingVertical: 40, alignItems: 'center' },
+  pickerGridScroll: { maxHeight: '70%' },
+  pickerGridContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
+  pickerList: { maxHeight: '70%' },
+  pickerListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+    gap: spacing.sm,
+  },
+  pickerListText: { flex: 1, fontSize: 15, color: colors.text },
+  pickerListCustomText: { flex: 1, fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
+  customModalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  customModalContent: {
+    backgroundColor: colors.cardElevated,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  customModalTitle: { fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  customModalInput: {
+    height: 52,
+    borderRadius: 10,
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+    fontSize: 16,
+  },
+  customModalActions: { flexDirection: 'row', gap: spacing.md },
+  customModalCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customModalCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
+  customModalConfirm: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customModalConfirmText: { fontSize: 15, color: colors.background, fontWeight: '700' },
   pickerList: { paddingHorizontal: spacing.lg },
   createCustomRow: {
     flexDirection: 'row',
@@ -1652,6 +2032,29 @@ const s = StyleSheet.create({
   createCustomText: { fontSize: 14, color: colors.text, fontWeight: '600' },
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
   pickerRowText: { fontSize: 15, color: colors.text },
+
+  pdfRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 6, paddingTop: 6,
+    borderTopWidth: 1, borderTopColor: '#1a1a1a',
+  },
+  pdfName: { flex: 1, fontSize: 11, color: '#555' },
+  pdfModalContainer: { flex: 1, backgroundColor: colors.background },
+  pdfModalHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+  },
+  pdfModalTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text, marginRight: spacing.sm },
+  pdfLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  summaryViewScroll: { flex: 1 },
+  summaryViewContent: { padding: spacing.lg, paddingBottom: spacing.xl },
+  summaryDownloadBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginHorizontal: spacing.lg, marginBottom: spacing.lg, paddingVertical: 14,
+    backgroundColor: colors.text, borderRadius: radius.md,
+  },
+  summaryDownloadBtnText: { fontSize: 14, fontWeight: '600', color: '#000' },
 });
 
 export default PillarsScreen;

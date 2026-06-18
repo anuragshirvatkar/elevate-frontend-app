@@ -13,6 +13,7 @@ import { setupApi, activitiesApi } from '../../api';
 import type { ActivityDto, CompanionDto } from '../../types';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
+import { getActivityDisplayName, CRAFT_COMMON_ORDER } from '../../utils/activityDisplayName';
 import { useAlert } from '../../context/AlertContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CraftIcon from '../../../assets/craft.svg';
@@ -57,20 +58,19 @@ function timeDiffMinutes(t1: string, t2: string): number {
 const getCompanionColor = (name: string): string => {
   const colorMap: { [key: string]: string } = {
     'Captain Blackvein': '#3DFF86',
+    'Arkan Veylor': '#FF5A5A',
+    'Zedra Morvain': '#C77DFF',
     'Tharok Warborn': '#FFC857',
+    'Seris Astraea': '#54A9FF',
     'Riven the Silent': '#FF5A5A',
     'Nova Emberlight': '#54A9FF',
   };
   return colorMap[name] || '#FFFFFF';
 };
 
-const COMMON_ORDER = ['work', 'studying', 'business building', 'project building', 'freelancing', 'language learning'];
+const COMMON_ORDER = CRAFT_COMMON_ORDER;
 
-const DISPLAY_NAMES: Record<string, string> = {
-  'Networking': 'Freelancing',
-};
-
-const getDisplayName = (name: string): string => DISPLAY_NAMES[name] || name;
+const getDisplayName = (name: string): string => getActivityDisplayName('craft', name);
 
 const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ navigation }) => {
   const { showAlert } = useAlert();
@@ -257,7 +257,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
     if (selectedActivities.includes(id)) {
       setSelectedActivities((prev) => prev.filter((a) => a !== id));
     } else if (selectedActivities.length >= 3) {
-      showAlert('Max 3 activities', 'You can only select up to 3 craft activities.');
+      showAlert('Max 3 activities', 'You can only select up to 3 craft activities during setup.');
     } else {
       setSelectedActivities((prev) => [...prev, id]);
     }
@@ -273,7 +273,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
       setCustomActivityIds((prev) => new Set(prev).add(data.id));
       setSelectedActivities((prev) => {
         if (prev.length >= 3) return prev;
-        return [...prev, data.id];
+        return prev.includes(data.id) ? prev : [...prev, data.id];
       });
       setCustomName('');
       setCustomModalVisible(false);
@@ -411,13 +411,13 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                 strokeWidth={3}
                 fill="none"
                 strokeDasharray={2 * Math.PI * 16}
-                strokeDashoffset={2 * Math.PI * 16 * (1 - 4 / 5)}
+                strokeDashoffset={2 * Math.PI * 16 * (1 - 5 / 6)}
                 strokeLinecap="round"
                 rotation="-90"
                 origin="20, 20"
               />
             </Svg>
-            <Text style={styles.stepText}>4/5</Text>
+            <Text style={styles.stepText}>5/6</Text>
           </View>
         </View>
 

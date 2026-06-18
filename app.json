@@ -2,10 +2,15 @@
   "expo": {
     "name": "Elevate",
     "slug": "elevate-frontend",
-    "version": "1.0.7",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/elevate-logo.png",
     "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/elevate-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.nexgen.elevate"
@@ -21,7 +26,7 @@
         "android.permission.RECORD_AUDIO"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 37
+      "versionCode": 39
     },
     "web": {
       "favicon": "./assets/elevate-logo.png"
@@ -43,6 +48,14 @@
           "sounds": [
             "./assets/notification-bell.wav"
           ]
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/elevate-logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
         }
       ],
       [

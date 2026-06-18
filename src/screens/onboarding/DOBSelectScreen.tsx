@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Svg, { Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import {
   View,
@@ -382,7 +383,7 @@ const DOBSelectScreen: React.FC<OnboardingStackScreenProps<'DOBSelect'>> = ({
       const formattedDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
       await setupApi.saveProgress({ dob: formattedDate });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navigation.navigate('SetupPower');
+      navigation.navigate('GenderSelect');
     } catch {
       Alert.alert('Error', 'Failed to save date of birth. Try again.');
     } finally {
@@ -403,7 +404,7 @@ const DOBSelectScreen: React.FC<OnboardingStackScreenProps<'DOBSelect'>> = ({
             }
             style={styles.backBtn}
           >
-            <Text style={styles.backText}>←</Text>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
           <View style={styles.progressRing}>
@@ -424,13 +425,13 @@ const DOBSelectScreen: React.FC<OnboardingStackScreenProps<'DOBSelect'>> = ({
                 strokeWidth={3}
                 fill="none"
                 strokeDasharray={2 * Math.PI * 16}
-                strokeDashoffset={2 * Math.PI * 16 * (1 - 2 / 5)}
+                strokeDashoffset={2 * Math.PI * 16 * (1 - 2 / 6)}
                 strokeLinecap="round"
                 rotation="-90"
                 origin="20, 20"
               />
             </Svg>
-            <Text style={styles.stepText}>2/5</Text>
+            <Text style={styles.stepText}>2/6</Text>
           </View>
         </View>
 
@@ -499,17 +500,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 0 },
     elevation: 4,
-  },
-  backText: {
-    ...typography.body,
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    textShadowColor: '#FFFFFF',
-    textShadowRadius: 4,
-    lineHeight: 20,
-    textAlign: 'center',
-    includeFontPadding: false,
   },
   progressRing: {
     width: 40,

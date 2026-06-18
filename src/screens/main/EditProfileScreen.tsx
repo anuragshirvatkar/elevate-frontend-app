@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Image, FlatList,
@@ -14,6 +14,9 @@ import { useUser } from '../../context/UserContext';
 import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
 import type { Avatar, SocialLink, CompanionDto, AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
+import { sortCompanions } from '../../utils/companions';
+import { sortAvatars } from '../../utils/avatars';
+import { buildWeeklyProgressRows } from '../../utils/avatarProgress';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -65,19 +68,7 @@ const fmtDateDisplay = (iso?: string) => {
 };
 
 const renderWeeklyProgress = (p: WeeklyAvatarProgress) => {
-  // Only count consecutive qualifying past weeks from most recent backward
-  const consecutivePast: typeof p.weeks = [];
-  for (const w of p.weeks.slice(1)) {
-    if (w.met) consecutivePast.push(w);
-    else break;
-  }
-
-  // Current week + consecutive past, padded with empty slots to fill totalWeeks
-  const rows = [p.weeks[0], ...consecutivePast];
-  while (rows.length < p.totalWeeks) {
-    rows.push({ week: rows.length + 1, days: 0, required: p.requiredDaysPerWeek, met: false });
-  }
-  const displayRows = rows.slice(0, p.totalWeeks);
+  const displayRows = buildWeeklyProgressRows(p);
 
   return (
     <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a', flexDirection: 'row', gap: 8 }}>
@@ -151,6 +142,7 @@ const EditProfileScreen = () => {
   const { profile, fetchProfile } = useUser();
   const { showAlert } = useAlert();
   const scrollViewRef = useRef<ScrollView>(null);
+  const avatarListRef = useRef<FlatList<Avatar>>(null);
   const avatarSectionY = useRef(0);
 
   // ── Form state ──
@@ -183,6 +175,8 @@ const EditProfileScreen = () => {
   const [selectedCompanionId, setSelectedCompanionId] = useState(
     profile?.companions?.find((c) => c.isActive)?.id || ''
   );
+  const [avatarIndex, setAvatarIndex] = useState(0);
+  const [companionIndex, setCompanionIndex] = useState(0);
 
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false); // ref so beforeRemove closure always sees the current value
@@ -191,7 +185,7 @@ const EditProfileScreen = () => {
   const [allCompanions, setAllCompanions] = useState<CompanionDto[]>([]);
   useEffect(() => {
     setupApi.getOptions()
-      .then(({ data }) => setAllCompanions((data as any).companions ?? []))
+      .then(({ data }) => setAllCompanions(sortCompanions((data as any).companions ?? [])))
       .catch(() => {});
   }, []);
 
@@ -228,46 +222,49 @@ const EditProfileScreen = () => {
   const hasChangesRef = useRef(hasChanges);
   hasChangesRef.current = hasChanges;
 
+  const promptUnsavedChanges = useCallback((onDiscard: () => void) => {
+    showAlert(
+      'Unsaved Changes',
+      'You have unsaved changes. What would you like to do?',
+      [
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: onDiscard,
+        },
+        {
+          text: 'Save',
+          style: 'default',
+          onPress: async () => { await onSaveRef.current?.(); },
+        },
+      ],
+    );
+  }, [showAlert]);
+
+  const handleBack = useCallback(() => {
+    if (hasChangesRef.current && !isSavingRef.current) {
+      promptUnsavedChanges(() => navigation.goBack());
+      return;
+    }
+    navigation.goBack();
+  }, [navigation, promptUnsavedChanges]);
+
   // Block navigation when there are unsaved changes (both nav back button and Android hardware back)
   useFocusEffect(
     React.useCallback(() => {
-      // Handle React Navigation back (app back button, gesture, etc.)
       const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
         if (!hasChangesRef.current || isSavingRef.current) return;
         e.preventDefault();
-        showAlert(
-          'Unsaved Changes',
-          'You have unsaved changes. What would you like to do?',
-          [
-            {
-              text: 'Discard',
-              style: 'destructive',
-              onPress: () => navigation.dispatch(e.data.action),
-            },
-            {
-              text: 'Save',
-              style: 'default',
-              onPress: async () => { await onSaveRef.current?.(); },
-            },
-          ]
-        );
+        promptUnsavedChanges(() => navigation.dispatch(e.data.action));
       });
 
-      // Handle Android hardware back button as fallback
       const backHandler = Platform.OS === 'android'
         ? BackHandler.addEventListener('hardwareBackPress', () => {
             if (hasChangesRef.current && !isSavingRef.current) {
-              showAlert(
-                'Unsaved Changes',
-                'You have unsaved changes. What would you like to do?',
-                [
-                  { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
-                  { text: 'Save', style: 'default', onPress: async () => { await onSaveRef.current?.(); } },
-                ]
-              );
-              return true; // Block default back
+              promptUnsavedChanges(() => navigation.goBack());
+              return true;
             }
-            return false; // Allow default back
+            return false;
           })
         : null;
 
@@ -275,19 +272,38 @@ const EditProfileScreen = () => {
         unsubscribe();
         backHandler?.remove();
       };
-    }, [navigation])
+    }, [navigation, promptUnsavedChanges])
   );
 
-  const allAvatars: Avatar[] = profile?.avatars || [];
-  const currentSelected = allAvatars.find((a) => a.id === selectedAvatarId);
-  const rest = allAvatars.filter((a) => a.id !== selectedAvatarId);
-  const unlockedRest = rest.filter((a) => a.isUnlocked);
-  const lockedRest = rest.filter((a) => !a.isUnlocked);
-  const avatarList = currentSelected
-    ? [currentSelected, ...unlockedRest, ...lockedRest]
-    : [...unlockedRest, ...lockedRest];
+  const isFemale = profile?.gender === 'female';
+  const allAvatars: Avatar[] = (profile?.avatars || []).filter(a => !isFemale || a.slug !== 'kael');
+  const avatarList = sortAvatars(allAvatars, selectedAvatarId, isFemale);
 
-  const companions = allCompanions.length > 0 ? allCompanions : (profile?.companions || []) as any[];
+  useEffect(() => {
+    const avatarId = route.params?.avatarId;
+    if (!avatarId || allAvatars.length === 0) return;
+
+    const avatar = allAvatars.find((a) => a.id === avatarId);
+    if (avatar?.isUnlocked) {
+      setSelectedAvatarId(avatarId);
+    }
+  }, [route.params?.avatarId, allAvatars]);
+
+  useEffect(() => {
+    const avatarId = route.params?.avatarId;
+    if (!avatarId) return;
+
+    const idx = avatarList.findIndex((a) => a.id === avatarId);
+    if (idx === -1) return;
+
+    setAvatarIndex(idx);
+    const timer = setTimeout(() => {
+      avatarListRef.current?.scrollToIndex({ index: idx, animated: true });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [route.params?.avatarId, avatarList]);
+
+  const companions = sortCompanions(allCompanions.length > 0 ? allCompanions : (profile?.companions || []) as any[]);
 
   // ── Username validation ──
   const onUsernameChange = (val: string) => {
@@ -359,15 +375,13 @@ const EditProfileScreen = () => {
   };
 
   const CARD_WIDTH = SCREEN_WIDTH * 0.62;
-  const [avatarIndex, setAvatarIndex] = useState(0);
-  const [companionIndex, setCompanionIndex] = useState(0);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/* Header — back + title only */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBack}>
+          <TouchableOpacity onPress={handleBack} style={styles.headerBack}>
             <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
@@ -504,6 +518,7 @@ const EditProfileScreen = () => {
             <Text style={styles.sectionTitle}>Avatar</Text>
             <Text style={styles.sectionSub}>Swipe to browse · tap to select</Text>
             <FlatList
+              ref={avatarListRef}
               horizontal
               data={avatarList}
               keyExtractor={(item) => item.id}
@@ -511,6 +526,11 @@ const EditProfileScreen = () => {
               snapToInterval={CARD_WIDTH + 12}
               decelerationRate="fast"
               contentContainerStyle={{ gap: 12 }}
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  avatarListRef.current?.scrollToIndex({ index: info.index, animated: true });
+                }, 100);
+              }}
               onMomentumScrollEnd={(e) => {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_WIDTH + 12));
                 setAvatarIndex(idx);

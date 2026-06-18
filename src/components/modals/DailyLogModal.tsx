@@ -22,12 +22,16 @@ import BrainIcon from '../../../assets/brain.svg';
 import CraftIcon from '../../../assets/craft.svg';
 import PurityIcon from '../../../assets/purity.svg';
 import { playPopUpSound } from '../../utils/playSound';
+import { getActivityDisplayName } from '../../utils/activityDisplayName';
+import { InAppNotificationBanner } from '../common/InAppNotification';
+import { useInAppNotification } from '../../context/InAppNotificationContext';
 
 const getCompanionColor = (name: string): string => {
   const colorMap: Record<string, string> = {
     'Captain Blackvein': '#3DFF86',
-    'Tharok Warborn': '#FFC857',
     'Arkan Veylor': '#FF5A5A',
+    'Zedra Morvain': '#C77DFF',
+    'Tharok Warborn': '#FFC857',
     'Seris Astraea': '#54A9FF',
     Monk: '#FFC857',
     Warrior: '#FF5A5A',
@@ -39,8 +43,9 @@ const getCompanionColor = (name: string): string => {
 interface DailyLogModalProps {
   visible: boolean;
   onClose: () => void;
-  onComplete: () => void;
+  onComplete: (loggedDate?: Date) => void;
   onNavigateToMind?: () => void;
+  onNavigateToPillars?: (section: 'power' | 'craft') => void;
   initialDate?: Date;
   initialSection?: string;
 }
@@ -66,10 +71,10 @@ interface LogState {
 // per-activity phase after "Yes" or "No"
 type ActivityPhase = 'hours' | 'notes' | 'images' | 'reason';
 
-const STEP_ORDER: Step[] = ['power', 'craft', 'purity', 'mind', 'done'];
+const STEP_ORDER_ALL: Step[] = ['power', 'craft', 'purity', 'mind', 'done'];
+const STEP_ORDER_FEMALE: Step[] = ['power', 'craft', 'mind', 'done'];
 
 const NO_REASON_OPTIONS = ['Tired', 'No time', 'Forgot', 'No motivation', 'Sick', 'Other'];
-
 
 const HOURS_OPTIONS = [
   { label: '< 45', minutes: 40 },
@@ -93,16 +98,20 @@ const hoursValueToLabel = (hours?: number): string => {
 };
 
 
-const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onComplete, onNavigateToMind, initialDate, initialSection }) => {
+const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onComplete, onNavigateToMind, onNavigateToPillars, initialDate, initialSection }) => {
   const navigation = useNavigation<any>();
   const [step, setStep] = useState<Step>('power');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [powerActivities, setPowerActivities] = useState<SectionActivity[]>([]);
   const [craftActivities, setCraftActivities] = useState<SectionActivity[]>([]);
+  const [powerLogNames, setPowerLogNames] = useState<Record<string, string>>({});
+  const [craftLogNames, setCraftLogNames] = useState<Record<string, string>>({});
   const [mindBooks, setMindBooks] = useState<MindSetup['books']>([]);
   const [mindActive, setMindActive] = useState(true);
   const { profile } = useUser();
   const minDate = profile?.joinedAt ? new Date(profile.joinedAt) : undefined;
+  const isFemale = profile?.gender === 'female';
+  const STEP_ORDER = isFemale ? STEP_ORDER_FEMALE : STEP_ORDER_ALL;
 
   const [logState, setLogState] = useState<LogState>({
     power: {},
@@ -123,10 +132,19 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
   const [prefillLocked, setPrefillLocked] = useState(false);
   const [mindHasChanges, setMindHasChanges] = useState(false);
+  const [logPrefillKey, setLogPrefillKey] = useState(0);
 
   useEffect(() => {
     if (step === 'mind') setMindHasChanges(false);
   }, [step]);
+
+  const { setModalOverlayActive } = useInAppNotification();
+
+  useEffect(() => {
+    if (!visible) return;
+    setModalOverlayActive(true);
+    return () => setModalOverlayActive(false);
+  }, [visible, setModalOverlayActive]);
 
   useEffect(() => {
     if (visible) {
@@ -139,6 +157,14 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       setHadPurityLog(false);
       setCompletedSections(new Set());
       setPrefillLocked(false);
+      setPowerLogNames({});
+      setCraftLogNames({});
+      setLogState({
+        power: {},
+        craft: {},
+        purity: { relapseCount: '0', reasonIfNo: '' },
+        mind: {},
+      });
       loadSetup(date, initialSection as Step | undefined);
     }
   }, [visible]);
@@ -147,17 +173,30 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     setLoadingSetup(true);
     let isMindActive = true;
     try {
-      const [power, craft, mind, progress] = await Promise.allSettled([
+      const [power, craft, mind, progress, options] = await Promise.allSettled([
         setupApi.getSection('power'),
         setupApi.getSection('craft'),
         setupApi.getMind(),
         setupApi.getProgress(),
+        setupApi.getOptions(),
       ]);
+      const catalog = options.status === 'fulfilled' ? options.value.data.activities : null;
+      const resolveActName = (sec: 'power' | 'craft', id: string, name?: string) =>
+        name?.trim() || catalog?.[sec]?.find((a) => a.id === id)?.name || '';
+
       if (power.status === 'fulfilled') setPowerActivities(
-        (power.value.data.activities || []).map((a: any) => ({ activityId: a.activityId, name: a.name, isPrimary: a.isPrimary }))
+        (power.value.data.activities || []).map((a: { activityId: string; name?: string; isPrimary?: boolean }) => ({
+          activityId: a.activityId,
+          name: resolveActName('power', a.activityId, a.name),
+          isPrimary: a.isPrimary,
+        })).filter((a) => a.name),
       );
       if (craft.status === 'fulfilled') setCraftActivities(
-        (craft.value.data.activities || []).map((a: any) => ({ activityId: a.activityId, name: a.name, isPrimary: a.isPrimary }))
+        (craft.value.data.activities || []).map((a: { activityId: string; name?: string; isPrimary?: boolean }) => ({
+          activityId: a.activityId,
+          name: resolveActName('craft', a.activityId, a.name),
+          isPrimary: a.isPrimary,
+        })).filter((a) => a.name),
       );
       if (mind.status === 'fulfilled') {
         const mindData = mind.value.data;
@@ -173,19 +212,21 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
 
   const fetchAndPrepopulate = async (date: Date, isMindActive = mindActive, overrideSection?: Step) => {
     const dateStr = format(date, 'yyyy-MM-dd');
+    const newPower: Record<string, ActivityEntry> = {};
+    const newCraft: Record<string, ActivityEntry> = {};
+    const powerNames: Record<string, string> = {};
+    const craftNames: Record<string, string> = {};
+    let newPurity: { relapseCount: string; reasonIfNo: string } = { relapseCount: '0', reasonIfNo: '' };
+    let hasPurityLog = false;
+    const newMind: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }> = {};
+
     try {
       const res = await activitiesApi.getLog(dateStr);
-      const logs: ActivityLogEntry[] = res.data;
-      if (!logs.length) return;
-
-      const newPower: Record<string, ActivityEntry> = {};
-      const newCraft: Record<string, ActivityEntry> = {};
-      let newPurity: { relapseCount: string; reasonIfNo: string } = { relapseCount: '0', reasonIfNo: '' };
-      let hasPurityLog = false;
-      const newMind: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }> = {};
+      const logs: ActivityLogEntry[] = res.data ?? [];
 
       for (const log of logs) {
         if (log.section === 'power' && log.activityId) {
+          if (log.activityName) powerNames[log.activityId] = log.activityName;
           newPower[log.activityId] = {
             didUserDo: log.didUserDo ?? false,
             hours: hoursValueToLabel(log.hours),
@@ -194,6 +235,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             reasonIfNo: log.reasonIfNo ?? undefined,
           };
         } else if (log.section === 'craft' && log.activityId) {
+          if (log.activityName) craftNames[log.activityId] = log.activityName;
           newCraft[log.activityId] = {
             didUserDo: log.didUserDo ?? false,
             hours: hoursValueToLabel(log.hours),
@@ -217,29 +259,26 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         }
       }
 
-      setLogState((prev) => ({
-        ...prev,
-        ...(Object.keys(newPower).length && { power: newPower }),
-        ...(Object.keys(newCraft).length && { craft: newCraft }),
-        ...(hasPurityLog && { purity: newPurity }),
-        ...(Object.keys(newMind).length && { mind: newMind }),
-      }));
+      setLogState({
+        power: newPower,
+        craft: newCraft,
+        purity: hasPurityLog ? newPurity : { relapseCount: '0', reasonIfNo: '' },
+        mind: newMind,
+      });
+      setPowerLogNames(powerNames);
+      setCraftLogNames(craftNames);
+      setLogPrefillKey((k) => k + 1);
 
-      // Ensure logged activities that aren't in setup (e.g. old custom activities) are visible
-      setPowerActivities((prev) => {
-        const existingIds = new Set(prev.map((a) => a.activityId));
-        const extra = logs
-          .filter((l) => l.section === 'power' && l.activityId && l.activityName && !existingIds.has(l.activityId!))
-          .map((l) => ({ activityId: l.activityId!, name: l.activityName! }));
-        return extra.length ? [...prev, ...extra] : prev;
-      });
-      setCraftActivities((prev) => {
-        const existingIds = new Set(prev.map((a) => a.activityId));
-        const extra = logs
-          .filter((l) => l.section === 'craft' && l.activityId && l.activityName && !existingIds.has(l.activityId!))
-          .map((l) => ({ activityId: l.activityId!, name: l.activityName! }));
-        return extra.length ? [...prev, ...extra] : prev;
-      });
+      if (!logs.length) {
+        setCompletedSections(new Set());
+        setPurityComplete(false);
+        setHadPurityLog(false);
+        setPrefillLocked(false);
+        if (overrideSection) {
+          setStep(overrideSection);
+        }
+        return;
+      }
 
       // Advance to first section that has no logs yet
       const loggedSections = new Set(logs.map((l) => l.section));
@@ -255,12 +294,21 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       }
       if (!loggedSections.has('power')) { setStep('power'); return; }
       if (!loggedSections.has('craft')) { setStep('craft'); return; }
-      if (!loggedSections.has('purity')) { setStep('purity'); return; }
+      if (!isFemale && !loggedSections.has('purity')) { setStep('purity'); return; }
       if (!loggedSections.has('mind') && isMindActive) { setStep('mind'); return; }
-      // All sections already logged — land on last relevant section, lock Next until user changes something
       setPrefillLocked(true);
-      setStep(isMindActive ? 'mind' : 'purity');
-    } catch {}
+      setStep(isMindActive ? 'mind' : (isFemale ? 'craft' : 'purity'));
+    } catch {
+      setLogState({
+        power: {},
+        craft: {},
+        purity: { relapseCount: '0', reasonIfNo: '' },
+        mind: {},
+      });
+      setPowerLogNames({});
+      setCraftLogNames({});
+      setLogPrefillKey((k) => k + 1);
+    }
   };
 
   const EMPTY_ACTIVITY: ActivityEntry = { didUserDo: false, hours: '', description: '', images: [] };
@@ -334,10 +382,49 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     });
   };
 
+  const addSetupActivity = async (
+    section: 'power' | 'craft',
+    activityId: string,
+    name: string,
+    setActivities: React.Dispatch<React.SetStateAction<SectionActivity[]>>,
+  ): Promise<SectionActivity | null> => {
+    try {
+      const setupRes = await setupApi.getSection(section);
+      const currentActivities = (setupRes.data.activities || []).map((a: { activityId: string; isPrimary?: boolean }) => ({
+        activityId: a.activityId,
+        isPrimary: a.isPrimary ?? false,
+      }));
+      if (!currentActivities.some((a) => a.activityId === activityId)) {
+        await setupApi.putSection(section, {
+          preferredTime: setupRes.data.preferredTime,
+          restDays: setupRes.data.restDays,
+          activities: [...currentActivities, { activityId, isPrimary: false }],
+        });
+      }
+      const newAct: SectionActivity = { activityId, name };
+      setActivities((prev) => (prev.some((a) => a.activityId === activityId) ? prev : [...prev, newAct]));
+      if (section === 'craft') {
+        setCraftLogNames((prev) => ({ ...prev, [activityId]: name }));
+      } else {
+        setPowerLogNames((prev) => ({ ...prev, [activityId]: name }));
+      }
+      return newAct;
+    } catch {
+      return null;
+    }
+  };
+
   const goNext = async () => {
     const idx = STEP_ORDER.indexOf(step);
     let nextStep = STEP_ORDER[idx + 1];
     if (nextStep === 'mind' && !mindActive) nextStep = 'done';
+
+    if (step === 'mind') {
+      const mindNotesValid = Object.values(logState.mind).every(
+        (d) => !d.didUserDo || !!d.description?.trim(),
+      );
+      if (!mindNotesValid) return;
+    }
 
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
     setLoading(true);
@@ -363,7 +450,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       setPointsPopup({ points, nextStep, msgIdx });
       if (points > 0) playPopUpSound();
     } else if (nextStep === 'done') {
-      onComplete();
+      onComplete(selectedDate);
     } else {
       setStep(nextStep);
     }
@@ -372,6 +459,13 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const submitPower = async (dateStr: string): Promise<number> => {
     let totalPoints = 0;
     for (const [activityId, data] of Object.entries(logState.power)) {
+      let act = powerActivities.find((a) => a.activityId === activityId);
+      if (!act) {
+        const name = powerLogNames[activityId];
+        if (!name) continue;
+        act = await addSetupActivity('power', activityId, name, setPowerActivities) ?? undefined;
+        if (!act) continue;
+      }
       try {
         const res = await activitiesApi.logActivity({
           section: 'power',
@@ -395,6 +489,13 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const submitCraft = async (dateStr: string): Promise<number> => {
     let totalPoints = 0;
     for (const [activityId, data] of Object.entries(logState.craft)) {
+      let act = craftActivities.find((a) => a.activityId === activityId);
+      if (!act) {
+        const name = craftLogNames[activityId];
+        if (!name) continue;
+        act = await addSetupActivity('craft', activityId, name, setCraftActivities) ?? undefined;
+        if (!act) continue;
+      }
       try {
         const res = await activitiesApi.logActivity({
           section: 'craft', activityId,
@@ -431,12 +532,13 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     for (const [bookId, data] of Object.entries(logState.mind)) {
       const book = mindBooks?.find((b) => b.userBookId === bookId);
       if (!book) continue;
+      if (data.didUserDo && !data.description?.trim()) continue;
       try {
         const res = await activitiesApi.logActivity({
           section: 'mind',
           userBookId: bookId,
           didUserDo: data.didUserDo,
-          description: data.description || undefined,
+          description: data.didUserDo ? data.description.trim() : undefined,
           images: data.images?.length ? data.images : undefined,
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
@@ -456,9 +558,14 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     return true;
   };
 
+  const mindNotesValid = Object.values(logState.mind).every(
+    (d) => !d.didUserDo || !!d.description?.trim(),
+  );
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
       <SafeAreaView style={styles.safe}>
+        <InAppNotificationBanner />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
           {/* Header */}
           <View style={styles.header}>
@@ -471,6 +578,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             <View style={styles.headerIconsRow}>
               {(['power', 'craft', 'purity', 'mind'] as const).filter((section) => {
                 if (section === 'mind' && !mindActive) return false;
+                if (section === 'purity' && isFemale) return false;
                 return true;
               }).map((section) => {
                 const completed = completedSections.has(section);
@@ -528,7 +636,16 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
               <ActivityIndicator color={colors.text} />
             </View>
           ) : (
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              decelerationRate="normal"
+              scrollEventThrottle={16}
+              overScrollMode="always"
+            >
               {/* Step content */}
               {step === 'power' && (
                 <PowerStep
@@ -538,26 +655,14 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   onUpdateImages={updatePowerImages}
                   onRemoveActivity={removePower}
                   resetKey={format(selectedDate, 'yyyy-MM-dd')}
-                  onAddActivity={async (name) => {
-                    try {
-                      const res = await activitiesApi.createCustom(name, 'power');
-                      const act = res.data as any;
-                      const newAct: SectionActivity = { activityId: act.id || act.activityId, name: act.name };
-                      try {
-                        const setupRes = await setupApi.getSection('power');
-                        const currentActivities = (setupRes.data.activities || []).map((a: any) => ({ activityId: a.activityId, isPrimary: a.isPrimary ?? false }));
-                        await setupApi.putSection('power', {
-                          preferredTime: setupRes.data.preferredTime,
-                          restDays: setupRes.data.restDays,
-                          activities: [...currentActivities, { activityId: newAct.activityId, isPrimary: false }],
-                        });
-                      } catch {}
-                      setPowerActivities((prev) => [...prev, newAct]);
-                      return newAct;
-                    } catch { return null; }
-                  }}
+                  prefillKey={logPrefillKey}
+                  logActivityNames={powerLogNames}
                   onActivePhaseChange={setHasActivePhase}
                   companion={companion}
+                  onNavigateToPillars={() => {
+                    onClose();
+                    onNavigateToPillars?.('power');
+                  }}
                 />
               )}
               {step === 'craft' && (
@@ -568,29 +673,17 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                   onUpdateImages={updateCraftImages}
                   onRemoveActivity={removeCraft}
                   resetKey={format(selectedDate, 'yyyy-MM-dd')}
-                  onAddActivity={async (name) => {
-                    try {
-                      const res = await activitiesApi.createCustom(name, 'craft');
-                      const act = res.data as any;
-                      const newAct: SectionActivity = { activityId: act.id || act.activityId, name: act.name };
-                      try {
-                        const setupRes = await setupApi.getSection('craft');
-                        const currentActivities = (setupRes.data.activities || []).map((a: any) => ({ activityId: a.activityId, isPrimary: a.isPrimary ?? false }));
-                        await setupApi.putSection('craft', {
-                          preferredTime: setupRes.data.preferredTime,
-                          restDays: setupRes.data.restDays,
-                          activities: [...currentActivities, { activityId: newAct.activityId, isPrimary: false }],
-                        });
-                      } catch {}
-                      setCraftActivities((prev) => [...prev, newAct]);
-                      return newAct;
-                    } catch { return null; }
-                  }}
+                  prefillKey={logPrefillKey}
+                  logActivityNames={craftLogNames}
                   onActivePhaseChange={setHasActivePhase}
                   companion={companion}
+                  onNavigateToPillars={() => {
+                    onClose();
+                    onNavigateToPillars?.('craft');
+                  }}
                 />
               )}
-              {step === 'purity' && (
+              {step === 'purity' && !isFemale && (
                 <PurityStep
                   state={logState.purity}
                   onUpdate={updatePurity}
@@ -601,6 +694,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
               )}
               {step === 'mind' && (
                 <MindStep
+                  key={format(selectedDate, 'yyyy-MM-dd')}
                   books={mindBooks || []}
                   logState={logState.mind}
                   onUpdate={updateMind}
@@ -617,9 +711,9 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           {!hasActivePhase && !(step === 'purity' && !mindActive && !purityComplete) && (
             <View style={styles.footer}>
               <TouchableOpacity
-                style={[styles.nextBtn, ((step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && !mindHasChanges && (mindBooks?.length ?? 0) > 0)) && styles.nextBtnDisabled]}
+                style={[styles.nextBtn, ((step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && (!mindHasChanges && (mindBooks?.length ?? 0) > 0 || !mindNotesValid))) && styles.nextBtnDisabled]}
                 onPress={goNext}
-                disabled={loading || (step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && !mindHasChanges && (mindBooks?.length ?? 0) > 0)}
+                disabled={loading || (step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && (!mindHasChanges && (mindBooks?.length ?? 0) > 0 || !mindNotesValid))}
                 activeOpacity={0.85}
               >
                 {loading ? (
@@ -641,6 +735,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                 setShowDatePicker(false);
                 if (event.type === 'set' && date) {
                   setSelectedDate(date);
+                  setPowerLogNames({});
+                  setCraftLogNames({});
                   // Reset logState then prefill with whatever exists for the new date
                   setLogState({
                     power: {},
@@ -664,7 +760,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
                 const next = pointsPopup.nextStep;
                 setPointsPopup(null);
                 if (next === 'done') {
-                  onComplete();
+                  onComplete(selectedDate);
                 } else {
                   setStep(next);
                 }
@@ -861,28 +957,37 @@ const ActivityLogStep: React.FC<{
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
   onRemoveActivity: (id: string) => void;
-  onAddActivity: (name: string) => Promise<SectionActivity | null>;
+  section: 'power' | 'craft';
   companion: CompanionDto | null;
   question: string;
   hoursQuestion: string;
   emptyText: string;
+  logActivityNames?: Record<string, string>;
   resetKey?: string;
+  prefillKey?: number;
   onActivePhaseChange?: (active: boolean) => void;
   onSecondActivityAdded?: () => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, companion, question, hoursQuestion, emptyText, resetKey, onActivePhaseChange, onSecondActivityAdded }) => {
+  onNavigateToPillars?: () => void;
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, section, companion, question, hoursQuestion, emptyText, logActivityNames = {}, resetKey, prefillKey = 0, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => {
+  const activityLabel = (name: string) => getActivityDisplayName(section, name);
   const [allActivities, setAllActivities] = useState<SectionActivity[]>(activities);
+
+  const effectiveActivities = allActivities;
+  const resolveActivity = (id: string): SectionActivity | null => {
+    const fromEffective = effectiveActivities.find((a) => a.activityId === id);
+    if (fromEffective) return fromEffective;
+    const logName = logActivityNames[id];
+    if (logName) return { activityId: id, name: logName };
+    return null;
+  };
   // donePhases: tracks which phases are shown as list rows for the in-progress activity
   const [donePhases, setDonePhases] = useState<Array<'yesno' | 'hours' | 'notes'>>([]);
-  const [confirmedIds, setConfirmedIds] = useState<string[]>(() =>
-    activities.filter((a) => a.activityId in logState).map((a) => a.activityId)
-  );
+  const [confirmedIds, setConfirmedIds] = useState<string[]>([]);
   const [activePhase, setActivePhase] = useState<{ id: string; phase: ActivityPhase } | null>(null);
 
   // Dropdown state
   const [showDropdown, setShowDropdown] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [addingCustom, setAddingCustom] = useState(false);
-  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [showSecondActivityChoice, setShowSecondActivityChoice] = useState(false);
   // Reason state (for No answer)
   const [selectedReason, setSelectedReason] = useState('');
   const [showCustomReason, setShowCustomReason] = useState(false);
@@ -905,18 +1010,7 @@ const ActivityLogStep: React.FC<{
   });
 
   useEffect(() => {
-    // Merge activities from props with local state, avoiding duplicates
-    setAllActivities((prev) => {
-      const existingIds = new Set(prev.map((a) => a.activityId));
-      const newFromProps = activities.filter((a) => !existingIds.has(a.activityId));
-      // Also check if any activities were removed from props - if so, reset to props
-      const propIds = new Set(activities.map((a) => a.activityId));
-      const hasRemoved = prev.some((a) => !propIds.has(a.activityId) && !a.activityId.startsWith('custom-'));
-      if (newFromProps.length === 0 && !hasRemoved) return prev;
-      // If there are new props or removed activities, rebuild from props + local custom activities
-      const localCustom = prev.filter((a) => !propIds.has(a.activityId));
-      return [...activities, ...localCustom];
-    });
+    setAllActivities(activities);
   }, [activities]);
 
   // Reset all state on date change
@@ -926,14 +1020,11 @@ const ActivityLogStep: React.FC<{
     setActivePhase(null);
     setDonePhases([]);
     setShowDropdown(false);
-    setCustomName('');
-    setShowCustomInput(false);
+    setShowSecondActivityChoice(false);
     setConfirmedIds([]);
     setSelectedReason('');
     setShowCustomReason(false);
     setCustomReasonText('');
-    // If logState already has entries (existing logs), don't set currentId
-    // so that confirmedIds syncs properly and shows list view
     const hasExistingLogs = Object.keys(logState).length > 0;
     if (hasExistingLogs) {
       setCurrentId(null);
@@ -943,56 +1034,62 @@ const ActivityLogStep: React.FC<{
     }
   }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync confirmedIds when prepopulated from outside (e.g. logState arrives after mount)
-  const logStateKey = Object.keys(logState).join(',');
+  // Sync confirmedIds only when parent finishes loading saved logs for this date
   useEffect(() => {
-    if (logStateKey.length > 0 && confirmedIds.length === 0 && activePhase === null) {
-      setConfirmedIds(Object.keys(logState));
-      setCurrentId(null);
-      setDonePhases([]);
+    const ids = Object.keys(logState);
+    if (ids.length === 0) {
+      setConfirmedIds([]);
+      return;
     }
-  }, [logStateKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    setConfirmedIds(ids);
+    setCurrentId(null);
+    setDonePhases([]);
+  }, [prefillKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { onActivePhaseChange?.(activePhase !== null); }, [activePhase]);
 
-  const currentActivity = currentId
-    ? (allActivities.find((a) => a.activityId === currentId)
-        ?? activities.find((a) => a.activityId === currentId)
-        ?? null)
-    : null;
-  const phaseActivity = activePhase
-    ? (allActivities.find((a) => a.activityId === activePhase.id)
-        ?? activities.find((a) => a.activityId === activePhase.id)
-        ?? null)
-    : null;
+  const currentActivity = currentId ? resolveActivity(currentId) : null;
+  const phaseActivity = activePhase ? resolveActivity(activePhase.id) : null;
 
-  const pickableActivities = allActivities.filter((a) => !loggedIds.includes(a.activityId));
+  const pickableActivities = effectiveActivities.filter(
+    (a) => !loggedIds.includes(a.activityId) && !!a.name?.trim(),
+  );
 
   const handlePickActivity = (act: SectionActivity) => {
     setCurrentId(act.activityId);
     setShowDropdown(false);
-    setShowCustomInput(false);
-    setCustomName('');
   };
 
-  const handleAddCustom = async () => {
-    const name = customName.trim();
-    if (!name) return;
-    setAddingCustom(true);
-    const result = await onAddActivity(name);
-    setAddingCustom(false);
-    if (result) {
-      setAllActivities((prev) => {
-        // Avoid duplicates if activity already exists
-        const exists = prev.some((a) => a.activityId === result.activityId);
-        if (exists) return prev;
-        return [...prev, result];
-      });
-      setCurrentId(result.activityId);
-      setShowDropdown(false);
-      setShowCustomInput(false);
-      setCustomName('');
-    }
+  const closePickers = () => {
+    setShowDropdown(false);
+    setShowSecondActivityChoice(false);
+  };
+
+  const renderActivityPickerFooter = () => {
+    if (!onNavigateToPillars) return null;
+    return (
+      <>
+        <View style={styles.actPickerDivider} />
+        <TouchableOpacity
+          style={styles.actPickerPillarsRow}
+          onPress={() => {
+            setShowDropdown(false);
+            closePickers();
+            onNavigateToPillars();
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="settings-outline" size={16} color="#888" />
+          <Text style={styles.actPickerPillarsText}>Add different activity in Pillars</Text>
+        </TouchableOpacity>
+      </>
+    );
+  };
+
+  const handlePickSetupActivity = (act: SectionActivity) => {
+    setCurrentId(act.activityId);
+    setShowSecondActivityChoice(false);
+    setShowDropdown(false);
   };
 
   const handleYesNo = (didDo: boolean) => {
@@ -1104,37 +1201,37 @@ const ActivityLogStep: React.FC<{
 
       {/* Fully confirmed activity tweet rows */}
       {confirmedIds.map((id) => {
-        const act = allActivities.find((a) => a.activityId === id);
+        const act = resolveActivity(id);
         if (!act) return null;
         const s = logState[id];
         return (
           <React.Fragment key={id}>
             <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'yesno')}>
-              <TweetSummary companion={companion} name={act.name}
+              <TweetSummary companion={companion} name={activityLabel(act.name)}
                 subtitle={`${question} it?`} status={s?.didUserDo ? 'Yes' : 'No'} editable />
             </TouchableOpacity>
             {!!s?.didUserDo && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'hours')}>
-                <TweetSummary companion={companion} name={act.name}
+                <TweetSummary companion={companion} name={activityLabel(act.name)}
                   subtitle="How many hours?" status={s?.hours || '—'} editable />
               </TouchableOpacity>
             )}
             {!!s?.didUserDo && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'notes')}>
-                <TweetSummary companion={companion} name={act.name}
+                <TweetSummary companion={companion} name={activityLabel(act.name)}
                   subtitle="How did it go?" status={s?.description || '—'} editable />
               </TouchableOpacity>
             )}
             {!!s?.didUserDo && !!(s?.images?.length) && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'images')}>
-                <TweetSummary companion={companion} name={act.name}
+                <TweetSummary companion={companion} name={activityLabel(act.name)}
                   subtitle="Session photos"
                   status={`${s!.images.length} photo${s!.images.length > 1 ? 's' : ''}`} editable />
               </TouchableOpacity>
             )}
             {!s?.didUserDo && !!s?.reasonIfNo && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id, 'reason')}>
-                <TweetSummary companion={companion} name={act.name}
+                <TweetSummary companion={companion} name={activityLabel(act.name)}
                   subtitle="Why not?" status={s.reasonIfNo!} editable />
               </TouchableOpacity>
             )}
@@ -1142,20 +1239,16 @@ const ActivityLogStep: React.FC<{
         );
       })}
 
-      {/* Add second activity button — shown after first is confirmed, max 2 activities */}
-      {confirmedIds.length > 0 && confirmedIds.length < 2 && !activePhase && currentId === null && !showCustomInput && (
+      {/* Add second activity button — shown after first is confirmed, max 2 per day */}
+      {confirmedIds.length > 0 && confirmedIds.length < 2 && !activePhase && currentId === null
+        && !showSecondActivityChoice && (
         <TouchableOpacity
           style={styles.addSecondBtn}
           onPress={() => {
-            const nextActivity = pickableActivities[0];
-            if (nextActivity) {
-              setCurrentId(nextActivity.activityId);
-              setShowDropdown(false);
-              setShowCustomInput(false);
+            if (pickableActivities.length > 0) {
+              setShowSecondActivityChoice(true);
             } else {
-              // No pre-configured second activity — go straight to custom input
-              setShowDropdown(true);
-              setShowCustomInput(true);
+              onNavigateToPillars?.();
             }
           }}
           activeOpacity={0.7}
@@ -1165,30 +1258,32 @@ const ActivityLogStep: React.FC<{
         </TouchableOpacity>
       )}
 
-      {/* Standalone custom input when no pre-configured second activity is available */}
-      {currentId === null && confirmedIds.length > 0 && confirmedIds.length < 2 && showDropdown && showCustomInput && !activePhase && (
+      {/* Choose setup activity or pick a different one from catalog */}
+      {showSecondActivityChoice && !activePhase && currentId === null && (
         <CompanionBubble companion={companion}>
-          <View style={styles.actPickerCustomRow}>
-            <TextInput
-              style={styles.actPickerCustomInput}
-              placeholder="Activity name..."
-              placeholderTextColor={colors.textMuted}
-              value={customName}
-              onChangeText={setCustomName}
-              autoFocus
-              onSubmitEditing={handleAddCustom}
-            />
+          <Text style={styles.questionText}>Pick a second activity</Text>
+          {pickableActivities.map((act) => (
             <TouchableOpacity
-              style={styles.actPickerCustomConfirm}
-              onPress={handleAddCustom}
-              disabled={addingCustom || !customName.trim()}
+              key={act.activityId}
+              style={styles.secondActivityRow}
+              onPress={() => handlePickSetupActivity(act)}
+              activeOpacity={0.7}
             >
-              {addingCustom
-                ? <ActivityIndicator size="small" color="#000" />
-                : <Ionicons name="checkmark" size={18} color="#000" />
-              }
+              <Text style={styles.secondActivityRowText}>{activityLabel(act.name)}</Text>
+              <Ionicons name="chevron-forward" size={16} color="#555" />
             </TouchableOpacity>
-          </View>
+          ))}
+          <TouchableOpacity
+            style={styles.secondActivityDifferentRow}
+            onPress={() => {
+              setShowSecondActivityChoice(false);
+              onNavigateToPillars?.();
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="settings-outline" size={16} color="#888" />
+            <Text style={styles.secondActivityDifferentText}>Add different activity in Pillars</Text>
+          </TouchableOpacity>
         </CompanionBubble>
       )}
 
@@ -1200,21 +1295,21 @@ const ActivityLogStep: React.FC<{
             {/* yes/no answered row */}
             {donePhases.includes('yesno') && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(activePhase.id, 'yesno')}>
-                <TweetSummary companion={companion} name={phaseActivity.name}
+                <TweetSummary companion={companion} name={activityLabel(phaseActivity.name)}
                   subtitle={`${question} it?`} status={s?.didUserDo ? 'Yes' : 'No'} editable />
               </TouchableOpacity>
             )}
             {/* hours answered row */}
             {donePhases.includes('hours') && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(activePhase.id, 'hours')}>
-                <TweetSummary companion={companion} name={phaseActivity.name}
+                <TweetSummary companion={companion} name={activityLabel(phaseActivity.name)}
                   subtitle="How many hours?" status={s?.hours || '—'} editable />
               </TouchableOpacity>
             )}
             {/* notes answered row */}
             {donePhases.includes('notes') && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(activePhase.id, 'notes')}>
-                <TweetSummary companion={companion} name={phaseActivity.name}
+                <TweetSummary companion={companion} name={activityLabel(phaseActivity.name)}
                   subtitle="How did it go?" status={s?.description || '—'} editable />
               </TouchableOpacity>
             )}
@@ -1224,7 +1319,7 @@ const ActivityLogStep: React.FC<{
               <CompanionBubble companion={companion}>
                 <View style={styles.questionRow}>
                   <Text style={styles.questionText}>{hoursQuestion} </Text>
-                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionHighlight}>{activityLabel(phaseActivity.name)}</Text>
                   <Text style={styles.questionText}>?</Text>
                 </View>
                 <View style={styles.hoursOptionsContainer}>
@@ -1265,7 +1360,7 @@ const ActivityLogStep: React.FC<{
               <CompanionBubble companion={companion}>
                 <View style={styles.questionRow}>
                   <Text style={styles.questionText}>Want to talk about how </Text>
-                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionHighlight}>{activityLabel(phaseActivity.name)}</Text>
                   <Text style={styles.questionText}> went?</Text>
                 </View>
                 <View style={styles.hoursWrap}>
@@ -1291,7 +1386,7 @@ const ActivityLogStep: React.FC<{
               <CompanionBubble companion={companion}>
                 <View style={styles.questionRow}>
                   <Text style={styles.questionText}>Share photos from </Text>
-                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionHighlight}>{activityLabel(phaseActivity.name)}</Text>
                   <Text style={styles.questionText}> session?</Text>
                 </View>
                 <Text style={styles.optionalLabel}>optional</Text>
@@ -1306,7 +1401,7 @@ const ActivityLogStep: React.FC<{
               <CompanionBubble companion={companion}>
                 <View style={styles.questionRow}>
                   <Text style={styles.questionText}>Why didn't you </Text>
-                  <Text style={styles.questionHighlight}>{phaseActivity.name}</Text>
+                  <Text style={styles.questionHighlight}>{activityLabel(phaseActivity.name)}</Text>
                   <Text style={styles.questionText}>?</Text>
                 </View>
                 <View style={styles.relapseCauses}>
@@ -1353,10 +1448,10 @@ const ActivityLogStep: React.FC<{
             {/* Bordered dropdown trigger — inline */}
             <TouchableOpacity
               style={[styles.actDropdownTrigger, showDropdown && styles.actDropdownTriggerOpen]}
-              onPress={() => { setShowDropdown((v) => !v); setShowCustomInput(false); setCustomName(''); }}
+              onPress={() => setShowDropdown((v) => !v)}
               activeOpacity={0.8}
             >
-              <Text style={styles.actDropdownTriggerText}>{currentActivity.name}</Text>
+              <Text style={styles.actDropdownTriggerText}>{activityLabel(currentActivity.name)}</Text>
               <Ionicons name={showDropdown ? 'chevron-up' : 'chevron-down'} size={13} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.questionText}> ?</Text>
@@ -1378,7 +1473,7 @@ const ActivityLogStep: React.FC<{
                       <Ionicons name="checkmark" size={14} color={colors.text} style={{ marginRight: 8 }} />
                     )}
                     <Text style={[styles.actPickerItemText, isSelected && styles.actPickerItemTextSelected]}>
-                      {act.name}
+                      {activityLabel(act.name)}
                     </Text>
                     {act.isPrimary && (
                       <Text style={styles.actPickerPrimaryBadge}>Primary</Text>
@@ -1389,39 +1484,7 @@ const ActivityLogStep: React.FC<{
               {pickableActivities.length === 0 && (
                 <Text style={styles.actPickerEmptyText}>No activities</Text>
               )}
-              <View style={styles.actPickerDivider} />
-              {allActivities.length < 3 && (showCustomInput ? (
-                <View style={styles.actPickerCustomRow}>
-                  <TextInput
-                    style={styles.actPickerCustomInput}
-                    placeholder="Activity name..."
-                    placeholderTextColor={colors.textMuted}
-                    value={customName}
-                    onChangeText={setCustomName}
-                    autoFocus
-                    onSubmitEditing={handleAddCustom}
-                  />
-                  <TouchableOpacity
-                    style={styles.actPickerCustomConfirm}
-                    onPress={handleAddCustom}
-                    disabled={addingCustom || !customName.trim()}
-                  >
-                    {addingCustom
-                      ? <ActivityIndicator size="small" color="#000" />
-                      : <Ionicons name="checkmark" size={18} color="#000" />
-                    }
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.actPickerAddCustom}
-                  onPress={() => setShowCustomInput(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color="#555" />
-                  <Text style={styles.actPickerAddCustomText}>Add custom activity</Text>
-                </TouchableOpacity>
-              ))}
+              {renderActivityPickerFooter()}
             </View>
           )}
 
@@ -1445,53 +1508,18 @@ const ActivityLogStep: React.FC<{
       {allActivities.length === 0 && (
         <CompanionBubble companion={companion}>
           <Text style={styles.questionText}>{emptyText}</Text>
-          <View style={styles.actPickerBtnRow}>
-            <TouchableOpacity
-              style={styles.actPickerBtn}
-              onPress={() => setShowDropdown((v) => !v)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add-circle-outline" size={14} color="#000" />
-              <Text style={styles.actPickerBtnText}>Add activity</Text>
-            </TouchableOpacity>
-          </View>
-          {showDropdown && (
-            <View style={styles.actPickerList}>
-              <View style={styles.actPickerDivider} />
-              {showCustomInput ? (
-                <View style={styles.actPickerCustomRow}>
-                  <TextInput
-                    style={styles.actPickerCustomInput}
-                    placeholder="Activity name..."
-                    placeholderTextColor={colors.textMuted}
-                    value={customName}
-                    onChangeText={setCustomName}
-                    autoFocus
-                    onSubmitEditing={handleAddCustom}
-                  />
-                  <TouchableOpacity
-                    style={styles.actPickerCustomConfirm}
-                    onPress={handleAddCustom}
-                    disabled={addingCustom || !customName.trim()}
-                  >
-                    {addingCustom
-                      ? <ActivityIndicator size="small" color="#000" />
-                      : <Ionicons name="checkmark" size={18} color="#000" />
-                    }
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.actPickerAddCustom}
-                  onPress={() => setShowCustomInput(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color="#555" />
-                  <Text style={styles.actPickerAddCustomText}>Add custom activity</Text>
-                </TouchableOpacity>
-              )}
+          {onNavigateToPillars ? (
+            <View style={styles.actPickerBtnRow}>
+              <TouchableOpacity
+                style={styles.actPickerBtn}
+                onPress={onNavigateToPillars}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="settings-outline" size={14} color="#000" />
+                <Text style={styles.actPickerBtnText}>Add activity in Pillars</Text>
+              </TouchableOpacity>
             </View>
-          )}
+          ) : null}
         </CompanionBubble>
       )}
     </View>
@@ -1504,26 +1532,31 @@ const PowerStep: React.FC<{
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
   onRemoveActivity: (id: string) => void;
-  onAddActivity: (name: string) => Promise<SectionActivity | null>;
+  logActivityNames?: Record<string, string>;
   resetKey?: string;
+  prefillKey?: number;
   companion: CompanionDto | null;
   onActivePhaseChange?: (active: boolean) => void;
   onSecondActivityAdded?: () => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange, onSecondActivityAdded }) => (
+  onNavigateToPillars?: () => void;
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, logActivityNames, resetKey, prefillKey, companion, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
     onUpdate={onUpdate}
     onUpdateImages={onUpdateImages}
     onRemoveActivity={onRemoveActivity}
-    onAddActivity={onAddActivity}
+    logActivityNames={logActivityNames}
+    section="power"
     resetKey={resetKey}
+    prefillKey={prefillKey}
     companion={companion}
     question="Did you go to"
     hoursQuestion="Nice! How many hours did you spend on"
     emptyText="No power activities configured."
     onActivePhaseChange={onActivePhaseChange}
     onSecondActivityAdded={onSecondActivityAdded}
+    onNavigateToPillars={onNavigateToPillars}
   />
 );
 
@@ -1533,26 +1566,31 @@ const CraftStep: React.FC<{
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
   onRemoveActivity: (id: string) => void;
-  onAddActivity: (name: string) => Promise<SectionActivity | null>;
+  logActivityNames?: Record<string, string>;
   resetKey?: string;
+  prefillKey?: number;
   companion: CompanionDto | null;
   onActivePhaseChange?: (active: boolean) => void;
   onSecondActivityAdded?: () => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, onAddActivity, resetKey, companion, onActivePhaseChange, onSecondActivityAdded }) => (
+  onNavigateToPillars?: () => void;
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, logActivityNames, resetKey, prefillKey, companion, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
     onUpdate={onUpdate}
     onUpdateImages={onUpdateImages}
     onRemoveActivity={onRemoveActivity}
-    onAddActivity={onAddActivity}
+    logActivityNames={logActivityNames}
+    section="craft"
     resetKey={resetKey}
+    prefillKey={prefillKey}
     companion={companion}
     question="Did you work on"
     hoursQuestion="Nice! How many hours did you put into"
     emptyText="No craft activities configured."
     onActivePhaseChange={onActivePhaseChange}
     onSecondActivityAdded={onSecondActivityAdded}
+    onNavigateToPillars={onNavigateToPillars}
   />
 );
 
@@ -1835,7 +1873,12 @@ const MindStep: React.FC<{
   onActivePhaseChange?: (active: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
 }> = ({ books, logState, onUpdate, onUpdateImages, companion, onAddBooks, onActivePhaseChange, onPendingChange }) => {
-  const alreadyLoggedIds = books.filter((b) => b.userBookId in logState).map((b) => b.userBookId);
+  const alreadyLoggedIds = books
+    .filter((b) => {
+      const entry = logState[b.userBookId];
+      return entry && (!entry.didUserDo || !!entry.description?.trim());
+    })
+    .map((b) => b.userBookId);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     books.find((b) => !(b.userBookId in logState))?.userBookId ?? null
   );
@@ -1848,6 +1891,17 @@ const MindStep: React.FC<{
   const [showCustomMindReason, setShowCustomMindReason] = useState(false);
   const [customMindReasonText, setCustomMindReasonText] = useState('');
 
+  useEffect(() => {
+    const needsNotes = books.find((b) => {
+      const entry = logState[b.userBookId];
+      return entry?.didUserDo && !entry.description?.trim();
+    });
+    if (needsNotes && !notesBookId && !imagesBookId && !reasonBookId) {
+      setNotesBookId(needsNotes.userBookId);
+      onActivePhaseChange?.(true);
+    }
+  }, [books, logState, notesBookId, imagesBookId, reasonBookId, onActivePhaseChange]);
+
   const activeId = notesBookId ?? imagesBookId;
   const tweetIds = activeId ? [...confirmedIds, activeId] : confirmedIds;
   const unanswered = books.filter((b) => !tweetIds.includes(b.userBookId) && b.userBookId !== reasonBookId);
@@ -1856,11 +1910,11 @@ const MindStep: React.FC<{
   const notesBook = notesBookId ? books.find((b) => b.userBookId === notesBookId) : null;
   const imagesBook = imagesBookId ? books.find((b) => b.userBookId === imagesBookId) : null;
 
-  // active = hide Next entirely (yes/no question or reason phase — mandatory interaction)
-  // pending = show but disable Next (notes/images phase — optional but must confirm or skip)
+  // active = hide Next entirely (yes/no, notes, or reason phase — mandatory interaction)
+  // pending = show but disable Next (images phase — optional but must confirm or skip)
   const notify = (sid: string | null, nid: string | null, iid: string | null, rid: string | null) => {
-    onActivePhaseChange?.(!!(sid || rid));
-    onPendingChange?.(!!(nid || iid));
+    onActivePhaseChange?.(!!(sid || rid || nid));
+    onPendingChange?.(!!iid);
   };
 
   const handleYesNo = (didDo: boolean) => {
@@ -1887,6 +1941,8 @@ const MindStep: React.FC<{
 
   const handleNotesDone = () => {
     if (!notesBookId) return;
+    const description = logState[notesBookId]?.description?.trim();
+    if (!description) return;
     const id = notesBookId;
     setImagesBookId(id);
     setNotesBookId(null);
@@ -1920,6 +1976,8 @@ const MindStep: React.FC<{
   };
 
   const confirmBook = (id: string) => {
+    const entry = logState[id];
+    if (entry?.didUserDo && !entry.description?.trim()) return;
     setConfirmedIds((prev) => [...prev, id]);
     setImagesBookId(null);
     setSelectedId(null);
@@ -1963,9 +2021,9 @@ const MindStep: React.FC<{
             <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(id)}>
               <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} editable />
             </TouchableOpacity>
-            {!!s?.didUserDo && (
+            {!!s?.didUserDo && (confirmedIds.includes(id) || imagesBookId === id) && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEditNotes(id)}>
-                <TweetSummary companion={companion} name={book.title} subtitle="Any notes?" status={s?.description || '—'} editable />
+                <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s?.description || '—'} editable />
               </TouchableOpacity>
             )}
           </React.Fragment>
@@ -1973,10 +2031,13 @@ const MindStep: React.FC<{
       })}
 
       {/* Notes phase */}
-      {notesBook && (
+      {notesBook && (() => {
+        const notesText = logState[notesBook.userBookId]?.description?.trim() || '';
+        const notesValid = notesText.length > 0;
+        return (
         <CompanionBubble companion={companion}>
           <View style={styles.questionRow}>
-            <Text style={styles.questionText}>Nice! Any notes on </Text>
+            <Text style={styles.questionText}>How did it go with </Text>
             <Text style={styles.questionHighlight}>{notesBook.title}</Text>
             <Text style={styles.questionText}>?</Text>
           </View>
@@ -1984,7 +2045,7 @@ const MindStep: React.FC<{
             <View style={styles.notesRow}>
               <TextInput
                 style={[styles.hoursInput, styles.descInput, styles.notesInput]}
-                placeholder="Jot something down (optional)"
+                placeholder="Add your notes (required)"
                 placeholderTextColor={colors.textMuted}
                 value={logState[notesBook.userBookId]?.description || ''}
                 onChangeText={(v) => onUpdate(notesBook.userBookId, 'description', v)}
@@ -1992,13 +2053,18 @@ const MindStep: React.FC<{
                 autoFocus
                 scrollEnabled
               />
-              <TouchableOpacity style={styles.notesDoneBtn} onPress={handleNotesDone}>
-                <Text style={styles.inputDoneText}>Done</Text>
+              <TouchableOpacity
+                style={[styles.notesDoneBtn, !notesValid && styles.notesDoneBtnDisabled]}
+                onPress={handleNotesDone}
+                disabled={!notesValid}
+              >
+                <Text style={[styles.inputDoneText, !notesValid && styles.inputDoneTextDisabled]}>Done</Text>
               </TouchableOpacity>
             </View>
           </View>
         </CompanionBubble>
-      )}
+        );
+      })()}
 
       {/* Images phase */}
       {imagesBook && (
@@ -2162,7 +2228,7 @@ const PointsPopup: React.FC<{
         <Text style={styles.pointsTitle}>{title}</Text>
         <Text style={styles.pointsSubtitle}>{subtitle}</Text>
         <TouchableOpacity style={styles.pointsContinueBtn} onPress={onContinue} activeOpacity={0.85}>
-          <Text style={styles.pointsContinueBtnText}>Continue →</Text>
+          <Text style={styles.pointsContinueBtnText}>Continue</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -2359,6 +2425,8 @@ const styles = StyleSheet.create({
   notesRow: { gap: 8 },
   notesInput: { width: '100%', maxHeight: 130 },
   notesDoneBtn: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.success },
+  notesDoneBtnDisabled: { opacity: 0.35, borderColor: colors.textMuted },
+  inputDoneTextDisabled: { color: colors.textMuted },
   addSecondBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 12, paddingHorizontal: spacing.sm,
@@ -2366,6 +2434,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   addSecondBtnText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1 },
+  secondActivityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  secondActivityRowText: { fontSize: 15, color: colors.text, flex: 1 },
+  secondActivityDifferentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  secondActivityDifferentText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
   bonusBadge: {
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
     backgroundColor: '#0d2200', borderWidth: 1, borderColor: '#1a3d00',
@@ -2689,6 +2774,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     width: '100%',
   },
+  actPickerListStandalone: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderRadius: 10,
+  },
   actPickerItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2721,43 +2811,17 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#222',
   },
-  actPickerAddCustom: {
+  actPickerPillarsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 13,
   },
-  actPickerAddCustomText: {
+  actPickerPillarsText: {
     fontSize: 14,
-    color: '#555',
-  },
-  actPickerCustomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-    width: '100%',
-  },
-  actPickerCustomInput: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minWidth: 0,
-  },
-  actPickerCustomConfirm: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.text,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });
 

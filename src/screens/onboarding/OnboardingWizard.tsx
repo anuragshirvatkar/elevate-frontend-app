@@ -9,21 +9,23 @@ import Animated, {
 import IntroWelcomeScreen from './IntroWelcomeScreen';
 import CompanionSelectScreen from './CompanionSelectScreen';
 import DOBSelectScreen from './DOBSelectScreen';
+import GenderSelectScreen from './GenderSelectScreen';
 import SetupPowerScreen from './SetupPowerScreen';
 import SetupCraftScreen from './SetupCraftScreen';
 import SetupMindScreen from './SetupMindScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type Step = 0 | 1 | 2 | 3 | 4 | 5;
+type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 type Direction = 'forward' | 'back';
 
-const SCREEN_NAMES = ['IntroWelcome', 'CompanionSelect', 'DOBSelect', 'SetupPower', 'SetupCraft', 'SetupMind'] as const;
+const SCREEN_NAMES = ['IntroWelcome', 'CompanionSelect', 'DOBSelect', 'GenderSelect', 'SetupPower', 'SetupCraft', 'SetupMind'] as const;
 
 const screens = [
   IntroWelcomeScreen,
   CompanionSelectScreen,
   DOBSelectScreen,
+  GenderSelectScreen,
   SetupPowerScreen,
   SetupCraftScreen,
   SetupMindScreen,
@@ -36,7 +38,7 @@ const OnboardingWizard: React.FC = () => {
   const [routeParams, setRouteParams] = useState<any>({});
 
   const next = useCallback(() => {
-    if (isAnimating || currentStep >= 5) return;
+    if (isAnimating || currentStep >= 6) return;
     setIsAnimating(true);
     setDirection('forward');
     setCurrentStep((prev) => (prev + 1) as Step);

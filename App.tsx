@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Platform, View, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
@@ -10,17 +10,15 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { UserProvider } from './src/context/UserContext';
 import { NetworkProvider, useNetwork } from './src/context/NetworkContext';
 import { AlertProvider } from './src/context/AlertContext';
+import { InAppNotificationProvider, useInAppNotification } from './src/context/InAppNotificationContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import NoInternetScreen from './src/components/common/NoInternetScreen';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 import { CommonActions } from '@react-navigation/native';
-import InAppNotification, { InAppNotificationData } from './src/components/common/InAppNotification';
+import InAppNotification from './src/components/common/InAppNotification';
 
 ExpoSplashScreen.preventAutoHideAsync().catch(() => {});
 
-// When the app is visually in the foreground, suppress the OS banner and show
-// our custom card instead. When backgrounded (JS bridge still alive but user
-// is on another app), let the OS show the real heads-up banner.
 Notifications.setNotificationHandler({
   handleNotification: async () => {
     const isForegrounded = AppState.currentState === 'active';
@@ -32,17 +30,6 @@ Notifications.setNotificationHandler({
   },
 });
 
-// Android: create/override the default channel with HIGH importance so push
-// notifications appear as heads-up cards (slide in from top) when the user
-// is using another app. 'default' is the channel Expo uses when no channelId
-// is specified in the push payload. Must run before any notification arrives.
-// Android locks a channel's importance after its first creation — calling
-// setNotificationChannelAsync again with a higher importance is silently
-// ignored. If 'elevate' was ever created at a lower importance (e.g. during
-// an earlier build), heads-up banners stop working and there is no way to
-// upgrade it in code. To guarantee a fresh MAX-importance channel we use a
-// versioned id and delete the stale one. IMPORTANT: the backend push payload
-// must send channelId: 'elevate_v2' to match this channel.
 const ANDROID_CHANNEL_ID = 'elevate_v2';
 if (Platform.OS === 'android') {
   (async () => {
@@ -67,8 +54,7 @@ function AppContent() {
   const { isConnected } = useNetwork();
   const { isAuthenticated } = useAuth();
   const navigationRef = useRef<any>(null);
-  const [inAppNotif, setInAppNotif] = useState<InAppNotificationData | null>(null);
-  const pendingActionRef = useRef<(() => void) | null>(null);
+  const { showNotification } = useInAppNotification();
   usePushNotifications(isAuthenticated);
 
   const getNavigationAction = (type: string) => {
@@ -102,17 +88,16 @@ function AppContent() {
 
   const showCard = (title: string, body: string, data: Record<string, unknown>) => {
     const companionImageUrl = (data?.companionImageUrl as string) ?? undefined;
-    setInAppNotif({ title, body, companionImageUrl });
     const type = data?.type as string | undefined;
-    if (type) {
-      pendingActionRef.current = () => {
-        const action = getNavigationAction(type);
-        if (action && navigationRef.current) navigationRef.current.dispatch(action);
-      };
-    }
+    const onPress = type
+      ? () => {
+          const action = getNavigationAction(type);
+          if (action && navigationRef.current) navigationRef.current.dispatch(action);
+        }
+      : undefined;
+    showNotification({ title, body, companionImageUrl }, onPress);
   };
 
-  // CASE 1: App in foreground — listener fires directly
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener(notification => {
       const { title, body, data } = notification.request.content;
@@ -122,7 +107,6 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
-  // CASE 2: User taps the OS notification (from background or killed state)
   useEffect(() => {
     Notifications.getLastNotificationResponseAsync().then(response => {
       if (!response) return;
@@ -142,7 +126,6 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
-  // CASE 3: App returns from background without tapping — try OS tray
   useEffect(() => {
     const handleAppStateChange = async (nextState: string) => {
       if (nextState !== 'active') return;
@@ -171,11 +154,7 @@ function AppContent() {
         <StatusBar style="light" backgroundColor="#000000" />
         <RootNavigator />
       </NavigationContainer>
-      <InAppNotification
-        notification={inAppNotif}
-        onDismiss={() => setInAppNotif(null)}
-        onPress={() => { pendingActionRef.current?.(); pendingActionRef.current = null; }}
-      />
+      <InAppNotification />
     </View>
   );
 }
@@ -188,7 +167,9 @@ export default function App() {
           <AlertProvider>
             <AuthProvider>
               <UserProvider>
-                <AppContent />
+                <InAppNotificationProvider>
+                  <AppContent />
+                </InAppNotificationProvider>
               </UserProvider>
             </AuthProvider>
           </AlertProvider>

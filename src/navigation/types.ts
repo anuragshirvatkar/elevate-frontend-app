@@ -20,6 +20,7 @@ export type OnboardingStackParamList = {
   IntroWelcome: undefined;
   CompanionSelect: { skipRouting?: boolean } | undefined;
   DOBSelect: undefined;
+  GenderSelect: undefined;
   SetupPower: undefined;
   SetupCraft: undefined;
   SetupMind: undefined;
@@ -27,16 +28,16 @@ export type OnboardingStackParamList = {
 
 export type MainTabParamList = {
   HomeTab: undefined;
-  Leaderboard: undefined;
   Journal: undefined;
+  Leaderboard: undefined;
+  Analytics: undefined;
   Profile: undefined;
 };
 
 export type DrawerParamList = {
   Tabs: undefined;
   Leaderboard: { section?: string } | undefined;
-  Analytics: undefined;
-  Pillars: undefined;
+  Pillars: { tab?: 'Power' | 'Craft' | 'Mind' } | undefined;
   Achievements: undefined;
   Support: undefined;
   PointRules: undefined;
@@ -44,7 +45,7 @@ export type DrawerParamList = {
   CompanionMessages: undefined;
   JournalDetail: { entry?: JournalEntry };
   RecordDetail: { date: string; logs: ActivityLogEntry[]; section?: string };
-  EditProfile: { scrollToSection?: string } | undefined;
+  EditProfile: { scrollToSection?: string; avatarId?: string } | undefined;
   PublicProfile: { userId: string; username: string };
 };
 

@@ -86,12 +86,15 @@ export interface MindSetup {
     isCompleted: boolean;
     completedAt?: string;
     aiSummary?: string;
+    summaryPdfUrl?: string | null;
+    summaryPdfFilename?: string | null;
   }>;
 }
 
 export interface SetupProgressResponse {
   onboardingCompleted: boolean;
   dob?: string | null;
+  gender?: 'male' | 'female' | null;
   selectedCompanion?: CompanionDto | null;
   sections: {
     power?: SectionSetup;
@@ -102,6 +105,7 @@ export interface SetupProgressResponse {
 
 export interface SaveProgressDto {
   dob?: string;
+  gender?: 'male' | 'female';
   companionId?: string;
   sections?: {
     power?: { preferredTime?: string; restDays?: string[]; activityIds?: string[] };
@@ -149,6 +153,7 @@ export interface ActivityLogEntry {
   reasonIfNo?: string;
   images: string[];
   date: string;
+  points?: number;
 }
 
 // ─── Activity Logs ─────────────────────────────────────────────────────────
@@ -163,6 +168,38 @@ export interface Last7DaysResponse {
   craft: Last7DaysEntry[];
   purity: Last7DaysEntry[];
   mind: Last7DaysEntry[] | { isActive: false };
+}
+
+export interface MonthlyMonthOption {
+  value: string;
+  label: string;
+}
+
+export interface MonthlyScore {
+  green: number;
+  total: number;
+  percent: number;
+}
+
+export interface MonthlyDayEntry {
+  date: string;
+  didUserDo?: boolean;
+  didUserRelapse?: boolean;
+}
+
+export interface MonthlyMindPaused {
+  isActive: false;
+  days?: MonthlyDayEntry[];
+}
+
+export interface MonthlyActivityResponse {
+  availableMonths: MonthlyMonthOption[];
+  selectedMonth: string;
+  score: MonthlyScore;
+  power: MonthlyDayEntry[];
+  craft: MonthlyDayEntry[];
+  mind: MonthlyDayEntry[] | MonthlyMindPaused;
+  purity: MonthlyDayEntry[];
 }
 
 // ─── Books ─────────────────────────────────────────────────────────────────
@@ -211,6 +248,13 @@ export interface JournalsListResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface TodayGoalResponse {
+  show: boolean;
+  heading?: string;
+  goal?: string;
+  sourceDate?: string;
 }
 
 // ─── Companion Messages ────────────────────────────────────────────────────
@@ -349,6 +393,7 @@ export interface ProfileResponse {
   username?: string;
   email: string;
   dateOfBirth?: string;
+  gender?: 'male' | 'female' | null;
   onboardingCompleted: boolean;
   mindSectionActive: boolean;
   joinedAt: string;
@@ -413,6 +458,7 @@ export interface StatsResponse {
     currentStreak: { days: number; startDate?: string; lastActivityDate?: string };
     longestStreak: { days: number; startDate?: string; endDate?: string };
     totalRelapses: number;
+    insightNote?: string;
   };
   journaling: { completedDays: number; totalDays: number; averageMood?: number };
   consistency: {
@@ -425,7 +471,7 @@ export interface StatsResponse {
 }
 
 // ─── Support ───────────────────────────────────────────────────────────────
-export type SupportIssueType = 'bug' | 'feature' | 'feedback' | 'account' | 'other';
+export type SupportIssueType = 'bug' | 'feature_request' | 'payment' | 'account' | 'other' | 'feedback';
 export type SupportStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
 export interface CreateSupportTicketDto {

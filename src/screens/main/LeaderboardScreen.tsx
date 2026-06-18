@@ -8,6 +8,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { leaderboardApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
 import type { LeaderboardEntry, LeaderboardPeriod, LeaderboardSection } from '../../types';
 
@@ -31,9 +32,7 @@ const SECTIONS: { label: string; value: LeaderboardSection }[] = [
 ];
 
 const PODIUM_COLOR: Record<number, string> = { 1: GOLD, 2: SILVER, 3: BRONZE };
-const PODIUM_HEIGHT: Record<number, number> = { 1: 220, 2: 180, 3: 180 };
-const PODIUM_AVATAR: Record<number, number> = { 1: 56, 2: 44, 3: 44 };
-const PODIUM_WIDTH: Record<number, number> = { 1: 1.2, 2: 1, 3: 1 };
+const PODIUM_AVATAR: Record<number, number> = { 1: 72, 2: 54, 3: 54 };
 
 interface PodiumBoxProps {
   entry?: LeaderboardEntry;
@@ -42,71 +41,70 @@ interface PodiumBoxProps {
   onPress?: () => void;
 }
 
+const AVATAR_AREA_HEIGHT = 92; // fixed height so all circle bottoms align
+
 const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe, onPress }) => {
   const color = PODIUM_COLOR[rank];
-  const height = PODIUM_HEIGHT[rank];
   const avatarSize = PODIUM_AVATAR[rank];
-  const flex = PODIUM_WIDTH[rank];
   const isEmpty = !entry;
   const pressable = !isEmpty && !isMe && !!onPress;
+  const ringSize = avatarSize + 10;
 
   return (
     <TouchableOpacity
       activeOpacity={pressable ? 0.75 : 1}
       onPress={pressable ? onPress : undefined}
-      style={[
-        styles.podiumBox,
-        { height, borderColor: color + '60', flex },
-        {
-          shadowColor: color,
-          shadowOpacity: rank === 1 ? 0.6 : 0.35,
-          shadowRadius: rank === 1 ? 24 : 18,
-          shadowOffset: { width: 0, height: 0 },
-          elevation: rank === 1 ? 12 : 8,
-        },
-      ]}
+      style={styles.podiumColumn}
     >
-      {/* Inner card overlay */}
-      <View style={styles.podiumInnerCard} />
-
-      {/* Rank badge — top-right */}
-      <View style={[styles.podiumRankBadge, { backgroundColor: color }]}>
-        <Text style={styles.podiumRankText}>#{rank}</Text>
+      {/* Fixed-height area — ring sits at bottom so all bottoms align */}
+      <View style={styles.podiumAvatarArea}>
+        <View
+          style={[
+            styles.podiumRing,
+            {
+              width: ringSize,
+              height: ringSize,
+              borderRadius: ringSize / 2,
+              borderColor: color,
+              shadowColor: color,
+              shadowOpacity: 1,
+              shadowRadius: rank === 1 ? 40 : 28,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: rank === 1 ? 40 : 24,
+            },
+          ]}
+        >
+          <View style={[
+            styles.podiumAvatarInner,
+            { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 },
+          ]}>
+            {!isEmpty && entry.profileImageUrl ? (
+              <Image
+                source={{ uri: entry.profileImageUrl }}
+                style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }}
+              />
+            ) : (
+              <Text style={[styles.podiumAvatarText, { fontSize: rank === 1 ? 26 : 20 }]}>
+                {isEmpty ? '?' : (entry.name[0]?.toUpperCase() || '?')}
+              </Text>
+            )}
+          </View>
+        </View>
       </View>
 
-      {/* Avatar */}
-      <View
-        style={[
-          styles.podiumAvatar,
-          {
-            width: avatarSize,
-            height: avatarSize,
-            borderRadius: avatarSize / 2,
-            borderColor: color,
-          },
-        ]}
-      >
-        {!isEmpty && entry.profileImageUrl ? (
-          <Image
-            source={{ uri: entry.profileImageUrl }}
-            style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }}
-          />
-        ) : (
-          <Text style={[styles.podiumAvatarText, { fontSize: rank === 1 ? 22 : 16 }]}>
-            {isEmpty ? '?' : (entry.name[0]?.toUpperCase() || '?')}
-          </Text>
-        )}
+      {/* Rank pill */}
+      <View style={[styles.podiumRankPill, { backgroundColor: color }]}>
+        <Text style={styles.podiumRankPillText}>#{rank}</Text>
       </View>
-
-      {/* Points */}
-      <Text style={[styles.podiumPoints, { color, fontSize: rank === 1 ? 28 : 22 }]}>
-        {isEmpty ? '—' : entry.points.toLocaleString()}
-        {!isEmpty && <Text style={styles.podiumPtsSuffix}> pts</Text>}
-      </Text>
 
       {/* Name */}
-      <Text style={[styles.podiumName, { fontSize: rank === 1 ? 13 : 11 }]} numberOfLines={1}>
+      <Text style={styles.podiumName} numberOfLines={1}>
         {isEmpty ? '—' : entry.name}
+      </Text>
+
+      {/* Points */}
+      <Text style={[styles.podiumPoints, { color }]}>
+        {isEmpty ? '—' : entry.points.toLocaleString()}
       </Text>
     </TouchableOpacity>
   );
@@ -116,6 +114,8 @@ const LeaderboardScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
+  const { profile } = useUser();
+  const isFemale = profile?.gender === 'female';
   const [rankings, setRankings] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<{ rank: number; points: number } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -349,7 +349,7 @@ const LeaderboardScreen = () => {
 
             <Text style={styles.filterSectionLabel}>Section</Text>
             <View style={styles.filterOptions}>
-              {SECTIONS.map(s => (
+              {SECTIONS.filter(s => s.value !== 'purity' || !isFemale).map(s => (
                 <TouchableOpacity
                   key={s.value}
                   style={[styles.filterOption, pendingSection === s.value && styles.filterOptionActive]}
@@ -401,71 +401,61 @@ const styles = StyleSheet.create({
   // Podium
   podiumRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
-    gap: spacing.sm,
+    gap: spacing.lg,
   },
-  podiumBox: {
-    borderRadius: 20,
-    borderWidth: 1,
-    backgroundColor: '#111111',
+  podiumColumn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  podiumAvatarArea: {
+    height: AVATAR_AREA_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  podiumRing: {
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.md,
-    position: 'relative',
-    gap: 8,
   },
-  podiumInnerCard: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    right: 6,
-    bottom: 6,
-    borderRadius: 16,
-    backgroundColor: '#151515',
-  },
-  podiumRankBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  podiumRankText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#000',
-    letterSpacing: 0.5,
-  },
-  podiumAvatar: {
-    borderWidth: 2,
-    backgroundColor: 'transparent',
+  podiumAvatarInner: {
+    backgroundColor: '#1c1c1c',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   podiumAvatarText: {
     color: colors.text,
+    fontWeight: '700',
+  },
+  podiumRankPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginTop: 2,
+  },
+  podiumRankPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000',
+    letterSpacing: 0.3,
+  },
+  podiumName: {
+    color: '#ccc',
     fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 12,
+    maxWidth: 90,
   },
   podiumPoints: {
     fontWeight: '700',
     textAlign: 'center',
-  },
-  podiumPtsSuffix: {
-    fontSize: 12,
-    fontWeight: '500',
-    opacity: 0.8,
-  },
-  podiumName: {
-    color: colors.textSecondary,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontSize: 13,
   },
 
   // List rows

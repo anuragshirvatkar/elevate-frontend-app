@@ -37,24 +37,13 @@ import { profileApi } from '../../api';
 import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
 import type { AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
+import { sortAvatars } from '../../utils/avatars';
+import { buildWeeklyProgressRows } from '../../utils/avatarProgress';
 
 const renderCompactProgress = (progress: AvatarProgress) => {
   if (progress.type === 'weekly') {
-    const { weeks, requiredDaysPerWeek, totalWeeks } = progress as WeeklyAvatarProgress;
-
-    // Only count consecutive qualifying past weeks from most recent backward
-    const consecutivePast: typeof weeks = [];
-    for (const w of weeks.slice(1)) {
-      if (w.met) consecutivePast.push(w);
-      else break;
-    }
-
-    // Build display: current week + consecutive past, padded with empty slots
-    const rows = [weeks[0], ...consecutivePast];
-    while (rows.length < totalWeeks) {
-      rows.push({ week: rows.length + 1, days: 0, required: requiredDaysPerWeek, met: false });
-    }
-    const displayRows = rows.slice(0, totalWeeks);
+    const { requiredDaysPerWeek } = progress as WeeklyAvatarProgress;
+    const displayRows = buildWeeklyProgressRows(progress as WeeklyAvatarProgress);
 
     return (
       <View style={{ marginTop: 5, flexDirection: 'row', gap: 6 }}>
@@ -168,6 +157,12 @@ const ProfileScreen = () => {
 
   const streaks = profile?.stats?.currentStreaks;
   const longestStreaks = profile?.stats?.longestStreaks;
+  const isFemale = profile?.gender === 'female';
+  const visibleAvatars = sortAvatars(
+    isFemale ? (profile?.avatars ?? []).filter((a) => a.slug !== 'kael') : (profile?.avatars ?? []),
+    undefined,
+    isFemale,
+  );
   const selectedAvatar = profile?.avatars?.find((a) => a.isSelected);
   const activeCompanion = profile?.companions?.find((c) => c.isActive);
   const socialLinks = profile?.socialLinks || [];
@@ -245,7 +240,7 @@ const ProfileScreen = () => {
         <View style={styles.divider} />
 
         {/* ── Avatar ── */}
-        {(profile?.avatars?.length ?? 0) > 0 ? (
+        {visibleAvatars.length > 0 ? (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { marginBottom: spacing.md }]}>Avatars</Text>
 
@@ -294,7 +289,7 @@ const ProfileScreen = () => {
 
             {/* All avatars carousel (locked + unlocked) */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: spacing.lg }}>
-              {(profile?.avatars ?? []).map((av) => {
+              {visibleAvatars.map((av) => {
                 const isLocked = !av.isUnlocked;
                 const isSelected = av.isSelected;
                 const unlockText = isLocked && av.unlockRequirement
@@ -305,7 +300,7 @@ const ProfileScreen = () => {
                     key={av.id}
                     style={[styles.avCarouselCard, isSelected && styles.avCarouselCardSelected, { width: AVATAR_CARD_W }]}
                     activeOpacity={0.75}
-                    onPress={() => navigation.navigate('EditProfile', { scrollToSection: 'avatar' })}
+                    onPress={() => navigation.navigate('EditProfile', { scrollToSection: 'avatar', avatarId: av.id })}
                   >
                     <View style={[styles.avCarouselImgWrap, { width: AVATAR_CARD_W }]}>
                       {av.fullBodyImageUrl ? (
@@ -350,7 +345,7 @@ const ProfileScreen = () => {
           </View>
         ) : null}
 
-        {(profile?.avatars?.length ?? 0) > 0 ? <View style={styles.divider} /> : null}
+        {visibleAvatars.length > 0 ? <View style={styles.divider} /> : null}
 
         {/* ── Companion ── */}
         {activeCompanion ? (

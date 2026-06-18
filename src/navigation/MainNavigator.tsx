@@ -22,6 +22,7 @@ import SupportScreen from '../screens/drawer/SupportScreen';
 import PointRulesScreen from '../screens/drawer/PointRulesScreen';
 import AboutScreen from '../screens/drawer/AboutScreen';
 import CustomDrawerContent from '../components/navigation/CustomDrawerContent';
+import { MainBootProvider } from '../context/MainBootContext';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const Drawer = createDrawerNavigator<DrawerParamList>();
@@ -37,35 +38,38 @@ const TabNavigator = () => {
           borderTopColor: colors.border,
           borderTopWidth: 1,
           paddingBottom: insets.bottom + 4,
-          height: 64 + insets.bottom,
+          height: 58 + insets.bottom,
         },
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarShowLabel: true,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '500', marginTop: -4 },
+        tabBarLabelStyle: { fontSize: 9, fontWeight: '500', marginTop: -4 },
         tabBarIconStyle: { marginBottom: -2 },
-        tabBarItemStyle: { paddingTop: 6, paddingBottom: 0 },
+        tabBarItemStyle: { paddingTop: 4, paddingBottom: 0 },
         tabBarIcon: ({ color, focused }) => {
           const icons: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
             HomeTab: { active: 'home', inactive: 'home-outline' },
-            Leaderboard: { active: 'trophy', inactive: 'trophy-outline' },
             Journal: { active: 'journal', inactive: 'journal-outline' },
+            Leaderboard: { active: 'trophy', inactive: 'trophy-outline' },
+            Analytics: { active: 'bar-chart', inactive: 'bar-chart-outline' },
             Profile: { active: 'person', inactive: 'person-outline' },
           };
           const iconSet = icons[route.name];
-          return <Ionicons name={focused ? iconSet.active : iconSet.inactive} size={22} color={color} />;
+          return <Ionicons name={focused ? iconSet.active : iconSet.inactive} size={19} color={color} />;
         },
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Tab.Screen name="Journal" component={JournalScreen} />
+      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Tab.Screen name="Analytics" component={AnalyticsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 };
 
 const MainNavigator = () => (
+  <MainBootProvider>
   <Drawer.Navigator
     drawerContent={(props) => <CustomDrawerContent {...props} />}
     screenOptions={{
@@ -77,7 +81,6 @@ const MainNavigator = () => (
   >
     <Drawer.Screen name="Tabs" component={TabNavigator} />
     <Drawer.Screen name="Leaderboard" component={LeaderboardScreen} />
-    <Drawer.Screen name="Analytics" component={AnalyticsScreen} />
     <Drawer.Screen name="Pillars" component={PillarsScreen} />
     <Drawer.Screen name="Achievements" component={AchievementsScreen} />
     <Drawer.Screen name="CompanionMessages" component={CompanionMessagesScreen} />
@@ -89,6 +92,7 @@ const MainNavigator = () => (
     <Drawer.Screen name="EditProfile" component={EditProfileScreen} />
     <Drawer.Screen name="PublicProfile" component={PublicProfileScreen} />
   </Drawer.Navigator>
+  </MainBootProvider>
 );
 
 export default MainNavigator;

@@ -15,9 +15,7 @@ type RecordDetailParams = { date: string; logs: ActivityLogEntry[]; section?: st
 type RecordDetailRoute = RouteProp<{ RecordDetail: RecordDetailParams }, 'RecordDetail'>;
 
 const SECTION_ICONS: Record<string, React.FC<any>> = { power: BicepIcon, mind: BrainIcon, craft: CraftIcon, purity: PurityIcon };
-const SECTION_LABELS: Record<string, string> = {
-  power: 'Power', craft: 'Craft', mind: 'Mind', purity: 'Purity',
-};
+const SECTION_LABELS: Record<string, string> = { power: 'Power', craft: 'Craft', mind: 'Mind', purity: 'Purity' };
 
 const formatHours = (hours?: number): string => {
   if (!hours || hours <= 0) return '—';
@@ -28,20 +26,25 @@ const formatHours = (hours?: number): string => {
   return `${m}m`;
 };
 
-interface FieldRowProps { icon: string; iconColor: string; label: string; value: string; empty?: boolean; }
-const FieldRow = ({ icon, iconColor, label, value, empty }: FieldRowProps) => (
-  <View style={styles.fieldRow}>
-    <View style={styles.fieldIcon}>
-      <Ionicons name={icon as any} size={18} color={empty ? '#444' : '#ffffff'} />
-    </View>
-    <View style={styles.fieldBody}>
-      <Text style={[styles.fieldLabel, empty && { color: '#444' }]}>{label}</Text>
-      <Text style={[styles.fieldValue, empty && { color: '#444' }]}>{value}</Text>
-    </View>
+const SCREEN = Dimensions.get('window');
+
+interface CapsuleProps {
+  icon?: string;
+  SvgIcon?: React.FC<any>;
+  text: string;
+  dim?: boolean;
+}
+
+const Capsule = ({ icon, SvgIcon, text, dim }: CapsuleProps) => (
+  <View style={styles.capsule}>
+    {SvgIcon ? (
+      <SvgIcon width={12} height={12} fill={dim ? '#555' : '#aaa'} stroke={dim ? '#555' : '#aaa'} color={dim ? '#555' : '#aaa'} strokeWidth={1.5} />
+    ) : icon ? (
+      <Ionicons name={icon as any} size={13} color={dim ? '#555' : '#aaa'} />
+    ) : null}
+    <Text style={[styles.capsuleText, dim && { color: '#555' }]}>{text}</Text>
   </View>
 );
-
-const SCREEN = Dimensions.get('window');
 
 const RecordDetailScreen = () => {
   const navigation = useNavigation<any>();
@@ -66,80 +69,103 @@ const RecordDetailScreen = () => {
   const log = sectionLogs.find(l => l.didUserDo) ?? sectionLogs[0];
   const Icon = SECTION_ICONS[section];
 
-  const renderSectionFields = () => {
+  const renderImages = (images: string[]) => (
+    <View style={styles.imagesSection}>
+      <Text style={styles.sectionLabel}>Photos ({images.length})</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {images.map((uri, i) => (
+          <TouchableOpacity key={i} onPress={() => setLightboxUri(uri)} activeOpacity={0.85}>
+            <Image source={{ uri }} style={styles.thumbnail} />
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  const renderContent = () => {
     if (section === 'purity') {
       const relapseCount = log?.relapseCount ?? null;
       const isClean = log ? (relapseCount ?? 0) === 0 : null;
+
       return (
         <>
-          <FieldRow
-            icon="shield-checkmark"
-            iconColor={isClean === true ? colors.success : '#FF4444'}
-            label="Did you stay clean?"
-            value={log ? (isClean ? 'Yes — Clean' : `No — ${relapseCount} relapse${relapseCount !== 1 ? 's' : ''}`) : '—'}
-            empty={!log}
-          />
-          {!isClean && log?.reasonIfNo ? (
-            <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log.reasonIfNo} />
+          <View style={styles.capsulesRow}>
+            <Capsule icon="shield-checkmark-outline" text={!log ? '—' : isClean ? 'Clean' : `${relapseCount} relapse${relapseCount !== 1 ? 's' : ''}`} dim={!log} />
+          </View>
+          {log?.reasonIfNo ? (
+            <View style={styles.descSection}>
+              <Text style={styles.sectionLabel}>Reason</Text>
+              <Text style={styles.descText}>{log.reasonIfNo}</Text>
+            </View>
           ) : null}
         </>
       );
     }
+
     if (section === 'mind') {
-      const bookTitle = log?.bookTitle ?? null;
       const didDo = log?.didUserDo;
+
       return (
         <>
-          <FieldRow icon="book" iconColor="#54A9FF" label="Did you read?" value={log ? (didDo ? 'Yes' : 'No') : '—'} empty={!log} />
-          {bookTitle && <FieldRow icon="library" iconColor="#54A9FF" label="Book" value={bookTitle} />}
-          {didDo && log?.description ? <FieldRow icon="chatbubble-outline" iconColor="#54A9FF" label="Notes" value={log.description} /> : null}
-          {!didDo && log?.reasonIfNo ? <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={log.reasonIfNo} /> : null}
-          {didDo && log?.images && log.images.length > 0 && (
-            <View style={styles.imagesSection}>
-              <Text style={styles.imagesLabel}>Photos ({log.images.length})</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {log.images.map((uri, i) => (
-              <TouchableOpacity key={i} onPress={() => setLightboxUri(uri)} activeOpacity={0.85}>
-                <Image source={{ uri }} style={styles.thumbnail} />
-              </TouchableOpacity>
-            ))}
-              </ScrollView>
+          <View style={styles.capsulesRow}>
+            {log?.bookTitle ? <Capsule icon="book-outline" text={log.bookTitle} /> : null}
+            <Capsule icon={didDo ? 'checkmark-circle-outline' : 'close-circle-outline'} text={!log ? '—' : didDo ? 'Yes' : 'No'} dim={!log} />
+          </View>
+          {didDo && log?.description ? (
+            <View style={styles.descSection}>
+              <Text style={styles.sectionLabel}>Notes</Text>
+              <Text style={styles.descText}>{log.description}</Text>
             </View>
-          )}
+          ) : null}
+          {!didDo && log?.reasonIfNo ? (
+            <View style={styles.descSection}>
+              <Text style={styles.sectionLabel}>Reason</Text>
+              <Text style={styles.descText}>{log.reasonIfNo}</Text>
+            </View>
+          ) : null}
+          {didDo && log?.images && log.images.length > 0 ? renderImages(log.images) : null}
         </>
       );
     }
-    const iconColor = section === 'power' ? '#FFC857' : '#3DFF86';
-    const didLabel = section === 'power' ? 'Did you train?' : 'Did you work on your craft?';
+
     if (sectionLogs.length === 0) {
-      return <FieldRow icon="barbell-outline" iconColor="#444" label={didLabel} value="—" empty />;
+      return (
+        <View style={styles.capsulesRow}>
+          <Capsule icon="remove-circle-outline" text="No record" dim />
+        </View>
+      );
     }
+
     return (
       <>
-        {sectionLogs.map((actLog, idx) => (
-          <React.Fragment key={actLog.id || idx}>
-            {sectionLogs.length > 1 && idx > 0 && <View style={styles.activityDivider} />}
-            {actLog.activityName && (
-              <FieldRow icon="barbell-outline" iconColor={iconColor} label="Activity" value={actLog.activityName} />
-            )}
-            <FieldRow icon="checkmark-circle-outline" iconColor={iconColor} label={didLabel} value={actLog.didUserDo ? 'Yes' : 'No'} />
-            {actLog.didUserDo && actLog.hours ? <FieldRow icon="time-outline" iconColor={iconColor} label="Hours" value={formatHours(actLog.hours)} /> : null}
-            {actLog.didUserDo && actLog.description ? <FieldRow icon="chatbubble-outline" iconColor={iconColor} label="Notes" value={actLog.description} /> : null}
-            {!actLog.didUserDo && actLog.reasonIfNo ? <FieldRow icon="close-circle-outline" iconColor="#FF4444" label="Reason" value={actLog.reasonIfNo} /> : null}
-            {actLog.didUserDo && actLog.images && actLog.images.length > 0 && (
-              <View style={styles.imagesSection}>
-                <Text style={styles.imagesLabel}>Photos ({actLog.images.length})</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {actLog.images.map((uri, i) => (
-                <TouchableOpacity key={i} onPress={() => setLightboxUri(uri)} activeOpacity={0.85}>
-                  <Image source={{ uri }} style={styles.thumbnail} />
-                </TouchableOpacity>
-              ))}
-                </ScrollView>
+        {sectionLogs.map((actLog, idx) => {
+          const didDo = actLog.didUserDo;
+          const hoursStr = didDo && actLog.hours && actLog.hours > 0 ? formatHours(actLog.hours) : null;
+
+          return (
+            <React.Fragment key={actLog.id || idx}>
+              {idx > 0 && <View style={styles.divider} />}
+              <View style={styles.capsulesRow}>
+                {actLog.activityName ? <Capsule SvgIcon={Icon} text={actLog.activityName} /> : null}
+                <Capsule icon={didDo ? 'checkmark-circle-outline' : 'close-circle-outline'} text={didDo ? 'Yes' : 'No'} />
+                {hoursStr ? <Capsule icon="time-outline" text={hoursStr} /> : null}
               </View>
-            )}
-          </React.Fragment>
-        ))}
+              {didDo && actLog.description ? (
+                <View style={styles.descSection}>
+                  <Text style={styles.sectionLabel}>Notes</Text>
+                  <Text style={styles.descText}>{actLog.description}</Text>
+                </View>
+              ) : null}
+              {!didDo && actLog.reasonIfNo ? (
+                <View style={styles.descSection}>
+                  <Text style={styles.sectionLabel}>Reason</Text>
+                  <Text style={styles.descText}>{actLog.reasonIfNo}</Text>
+                </View>
+              ) : null}
+              {didDo && actLog.images && actLog.images.length > 0 ? renderImages(actLog.images) : null}
+            </React.Fragment>
+          );
+        })}
       </>
     );
   };
@@ -165,21 +191,16 @@ const RecordDetailScreen = () => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {renderSectionFields()}
+        {renderContent()}
       </ScrollView>
 
-      {/* Lightbox */}
       <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <View style={styles.lightboxOverlay}>
           <TouchableOpacity style={styles.lightboxClose} onPress={() => setLightboxUri(null)} activeOpacity={0.8}>
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
           {lightboxUri && (
-            <Image
-              source={{ uri: lightboxUri }}
-              style={styles.lightboxImage}
-              resizeMode="contain"
-            />
+            <Image source={{ uri: lightboxUri }} style={styles.lightboxImage} resizeMode="contain" />
           )}
         </View>
       </Modal>
@@ -187,9 +208,15 @@ const RecordDetailScreen = () => {
       <DailyLogModal
         visible={showEditModal}
         onClose={() => setShowEditModal(false)}
-        onComplete={() => { onEdited?.(); setShowEditModal(false); navigation.goBack(); }}
+        onComplete={(_loggedDate?: Date) => { onEdited?.(); setShowEditModal(false); navigation.goBack(); }}
         initialDate={new Date(date + 'T00:00:00')}
         initialSection={section}
+        onNavigateToPillars={(pillarSection) => {
+          setShowEditModal(false);
+          navigation.getParent()?.navigate('Pillars', {
+            tab: pillarSection === 'power' ? 'Power' : 'Craft',
+          });
+        }}
       />
     </SafeAreaView>
   );
@@ -197,6 +224,7 @@ const RecordDetailScreen = () => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.lg, paddingVertical: 14,
@@ -204,50 +232,88 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 36 },
   headerDate: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 16 },
-
   editBtn: { width: 36, alignItems: 'flex-end' },
+
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  sectionIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
+  sectionIconCircle: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center', justifyContent: 'center',
+  },
   sectionTitle: { ...typography.body, color: colors.text, fontWeight: '700', fontSize: 18, flex: 1 },
   noRecordBadge: { color: '#555', fontSize: 12, fontWeight: '600' },
-  fieldRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
+
+  capsulesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  fieldIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
-  fieldBody: { flex: 1, gap: 3 },
-  fieldLabel: { ...typography.bodySmall, color: colors.textMuted, fontSize: 12 },
-  fieldValue: { ...typography.body, color: colors.text, fontSize: 14 },
-  imagesSection: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
-  imagesLabel: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.sm },
+  capsule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  capsuleText: {
+    color: '#ccc',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  divider: { height: 1, backgroundColor: '#111' },
+
+  descSection: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 6,
+  },
+  sectionLabel: {
+    color: '#555',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  descText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  imagesSection: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 10,
+  },
   thumbnail: { width: 80, height: 80, borderRadius: 8, marginRight: spacing.sm },
-  activityDivider: { height: 6, backgroundColor: '#111' },
+
   lightboxOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.95)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  lightboxImage: {
-    width: SCREEN.width,
-    height: SCREEN.height * 0.8,
-  },
+  lightboxImage: { width: SCREEN.width, height: SCREEN.height * 0.8 },
   lightboxClose: {
-    position: 'absolute',
-    top: 52,
-    right: 20,
-    zIndex: 10,
+    position: 'absolute', top: 52, right: 20, zIndex: 10,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 20, width: 40, height: 40,
+    alignItems: 'center', justifyContent: 'center',
   },
 });
 

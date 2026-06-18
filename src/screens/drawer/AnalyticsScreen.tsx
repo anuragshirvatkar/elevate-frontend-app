@@ -1,14 +1,24 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle } from 'react-native-svg';
-import { statsApi } from '../../api';
+import { statsApi, activityLogsApi, activitiesApi } from '../../api';
+import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
-import type { StatsResponse, StatsPeriod } from '../../types';
+import {
+  enrichMonthlyMindFromLogs,
+  getMonthlyMindEntries,
+  getMonthlySectionEntries,
+  hasMonthlyMindGreenDots,
+  shouldShowMonthlyMind,
+} from '../../utils/monthlyMind';
+import type {
+  StatsResponse, StatsPeriod, MonthlyActivityResponse, MonthlyDayEntry,
+} from '../../types';
 import BicepIcon from '../../../assets/bicep.svg';
 import BrainIcon from '../../../assets/brain.svg';
 import CraftIcon from '../../../assets/craft.svg';
@@ -28,6 +38,49 @@ const CRAFT_COLOR  = '#FF6B9D';
 const MIND_COLOR   = '#54A9FF';
 const PURITY_COLOR = '#3DFF86';
 const JOURNAL_COLOR = '#F97316';
+
+type ActivitySection = 'power' | 'craft' | 'mind' | 'purity';
+
+const SECTION_ICONS: Record<ActivitySection, React.ComponentType<any>> = {
+  power: BicepIcon,
+  craft: CraftIcon,
+  mind: BrainIcon,
+  purity: PurityIcon,
+};
+
+const getMonthLabel = (monthValue: string, availableMonths: { value: string; label: string }[]) =>
+  availableMonths.find((m) => m.value === monthValue)?.label ?? monthValue;
+
+const isCountableDay = (day: MonthlyDayEntry | undefined) =>
+  day?.didUserDo === true || day?.didUserDo === false;
+
+const getDotStyle = (
+  entry: MonthlyDayEntry | undefined,
+  section: ActivitySection,
+  rangeDay?: MonthlyDayEntry,
+) => {
+  const grey = { backgroundColor: '#1a1a1a' as const, borderColor: '#333' as const };
+  const red = { backgroundColor: '#FF4444' as const, borderColor: '#FF4444' as const };
+  const green = { backgroundColor: colors.success, borderColor: colors.success };
+
+  if (section === 'purity') {
+    if (!entry) return grey;
+    if (entry.didUserRelapse === false) return green;
+    if (entry.didUserRelapse === true) return red;
+    return grey;
+  }
+
+  if (section === 'mind') {
+    if (!isCountableDay(rangeDay)) return grey;
+    if (entry?.didUserDo === true) return green;
+    return red;
+  }
+
+  if (!entry) return grey;
+  if (entry.didUserDo === true) return green;
+  if (entry.didUserDo === false) return red;
+  return grey;
+};
 
 // ── Donut chart ──────────────────────────────────────────────────────────────
 const DonutChart = ({
@@ -102,14 +155,123 @@ const SectionCard = ({
   </View>
 );
 
+const chunkMonthDays = (days: MonthlyDayEntry[], size = 15): MonthlyDayEntry[][] => {
+  if (!days.length) return [];
+  return [days.slice(0, size), days.slice(size)].filter((chunk) => chunk.length > 0);
+};
+
+const MonthlyHalfGrid = ({
+  days,
+  sections,
+  monthlyData,
+}: {
+  days: MonthlyDayEntry[];
+  sections: ActivitySection[];
+  monthlyData: MonthlyActivityResponse;
+}) => (
+  <View style={s.halfGrid}>
+    <View style={s.halfRow}>
+      <View style={s.pillarIconCol} />
+      {days.map((day) => (
+        <View key={`num-${day.date}`} style={s.halfDayCol}>
+          <Text style={s.halfDayNum}>{parseInt(day.date.slice(8, 10), 10)}</Text>
+        </View>
+      ))}
+    </View>
+
+    {sections.map((section) => {
+      const entries = getMonthlySectionEntries(monthlyData, section);
+      const Icon = SECTION_ICONS[section];
+      return (
+        <View key={section} style={s.halfRow}>
+          <View style={s.pillarIconCol}>
+            <Icon
+              width={section === 'power' ? 16 : 14}
+              height={section === 'power' ? 16 : 14}
+              fill="#FFFFFF"
+              stroke="#FFFFFF"
+              color="#FFFFFF"
+              strokeWidth={section === 'power' ? 2.2 : 1.4}
+            />
+          </View>
+          {days.map((day) => {
+            const entry = entries.find((e) => e.date === day.date);
+            const rangeDay = section === 'mind'
+              ? monthlyData.power.find((e) => e.date === day.date)
+              : undefined;
+            const dotColors = getDotStyle(entry, section, rangeDay);
+            return (
+              <View key={`${day.date}-${section}`} style={s.halfDayCol}>
+                <View style={[s.pillarDot, dotColors]} />
+              </View>
+            );
+          })}
+        </View>
+      );
+    })}
+  </View>
+);
+
+const MonthlyPillarGrid = ({
+  monthDays,
+  sections,
+  monthlyData,
+}: {
+  monthDays: MonthlyDayEntry[];
+  sections: ActivitySection[];
+  monthlyData: MonthlyActivityResponse;
+}) => {
+  const halves = chunkMonthDays(monthDays, 15);
+  return (
+    <View style={s.pillarGrid}>
+      {halves.map((days, idx) => (
+        <View key={`half-${idx}`} style={idx > 0 ? s.halfGridSpaced : undefined}>
+          {idx > 0 && <View style={s.halfDivider} />}
+          <MonthlyHalfGrid days={days} sections={sections} monthlyData={monthlyData} />
+        </View>
+      ))}
+    </View>
+  );
+};
+
 // ── Screen ───────────────────────────────────────────────────────────────────
 const AnalyticsScreen = () => {
-  const navigation = useNavigation();
+  const { profile, fetchProfile } = useUser();
+  const isFemale = profile?.gender === 'female';
   const [period, setPeriod] = useState<StatsPeriod>('30d');
   const [pendingPeriod, setPendingPeriod] = useState<StatsPeriod>('30d');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [monthlyData, setMonthlyData] = useState<MonthlyActivityResponse | null>(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(true);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const selectedMonthRef = useRef<string | undefined>();
+
+  const loadMonthly = useCallback(async (month?: string) => {
+    setMonthlyLoading(true);
+    try {
+      const { data } = await activityLogsApi.getMonthly(month);
+      let nextData = data;
+
+      if (!Array.isArray(data.mind)) {
+        const existingMind = getMonthlyMindEntries(data.mind);
+        if (hasMonthlyMindGreenDots(existingMind)) {
+          nextData = { ...data, mind: { isActive: false, days: existingMind } };
+        } else {
+          try {
+            const { data: logs } = await activitiesApi.getAllLogs();
+            nextData = enrichMonthlyMindFromLogs(data, logs);
+          } catch {}
+        }
+      }
+
+      setMonthlyData(nextData);
+    } catch {
+      if (!month) setMonthlyData(null);
+    }
+    setMonthlyLoading(false);
+  }, []);
 
   const load = useCallback(async (p: StatsPeriod) => {
     setLoading(true);
@@ -121,10 +283,37 @@ const AnalyticsScreen = () => {
   }, []);
 
   useEffect(() => { load(period); }, [period, load]);
-  useFocusEffect(useCallback(() => { load(period); }, [period, load]));
+  useEffect(() => {
+    if (monthlyData?.selectedMonth) {
+      selectedMonthRef.current = monthlyData.selectedMonth;
+    }
+  }, [monthlyData?.selectedMonth]);
+  useFocusEffect(useCallback(() => {
+    fetchProfile();
+    load(period);
+    loadMonthly(selectedMonthRef.current);
+  }, [period, load, loadMonthly, fetchProfile]));
 
   const mindActive = stats && !('isActive' in stats.mind);
   const mindData = mindActive ? (stats!.mind as Exclude<StatsResponse['mind'], { isActive: false }>) : null;
+
+  const monthlyMindVisible = shouldShowMonthlyMind(monthlyData?.mind);
+
+  const monthlySections = useMemo(() => (
+    (['power', 'craft', 'mind', 'purity'] as const).filter((section) => {
+      if (section === 'mind' && !monthlyMindVisible) return false;
+      if (section === 'purity' && isFemale) return false;
+      return true;
+    })
+  ), [monthlyMindVisible, isFemale]);
+
+  const monthDays = monthlyData?.power ?? [];
+
+  const handleMonthSelect = (value: string) => {
+    if (value === monthlyData?.selectedMonth) return;
+    setShowMonthPicker(false);
+    loadMonthly(value);
+  };
 
   const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   const overallRate = stats?.consistency.overallCompletionRate ?? 0;
@@ -134,20 +323,56 @@ const AnalyticsScreen = () => {
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.back}>
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }} />
         <Text style={s.headerTitle}>Analytics</Text>
       </View>
 
-      {loading ? (
+      {loading && !stats && monthlyLoading ? (
         <View style={s.center}><ActivityIndicator color={colors.text} /></View>
-      ) : !stats ? (
-        <View style={s.center}><Text style={s.empty}>Failed to load analytics.</Text></View>
       ) : (
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
+          {/* ── Monthly Activity ───────────────────── */}
+          <View style={s.activityCard}>
+            {monthlyLoading && !monthlyData ? (
+              <ActivityIndicator color={colors.text} style={s.sectionLoader} />
+            ) : monthlyData ? (
+              <>
+                <View style={s.monthlyToolbar}>
+                  <TouchableOpacity
+                    style={s.monthSelector}
+                    onPress={() => setShowMonthPicker(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.monthSelectorText}>
+                      {getMonthLabel(monthlyData.selectedMonth, monthlyData.availableMonths)}
+                    </Text>
+                    <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+                  </TouchableOpacity>
+                  <Text style={s.monthScoreText}>
+                    <Text style={s.monthScoreGreen}>{monthlyData.score.green}</Text>
+                    <Text style={s.monthScoreMuted}> / {monthlyData.score.total}</Text>
+                  </Text>
+                </View>
+
+                {monthlyLoading && <ActivityIndicator color={colors.text} style={s.inlineLoader} />}
+
+                <MonthlyPillarGrid
+                  monthDays={monthDays}
+                  sections={monthlySections}
+                  monthlyData={monthlyData}
+                />
+              </>
+            ) : (
+              <Text style={s.sectionEmpty}>Failed to load monthly activity.</Text>
+            )}
+          </View>
+
+          {loading && !stats ? (
+            <View style={s.statsLoader}><ActivityIndicator color={colors.text} /></View>
+          ) : !stats ? (
+            <Text style={s.sectionEmpty}>Failed to load analytics.</Text>
+          ) : (
+          <>
           {/* ── Period row ──────────────────────────── */}
           <View style={s.periodRow}>
             <View>
@@ -295,7 +520,7 @@ const AnalyticsScreen = () => {
           />
 
           {/* ── Purity ─────────────────────────────── */}
-          <View style={s.card}>
+          {!isFemale && <View style={s.card}>
             <View style={s.cardHeader}>
               <View style={s.cardLeft}>
                 <View style={[s.cardIconWrap, { backgroundColor: PURITY_COLOR + '18', borderColor: PURITY_COLOR + '38' }]}>
@@ -308,28 +533,25 @@ const AnalyticsScreen = () => {
                   </Text>
                 </View>
               </View>
-              <View style={s.donutWrap}>
-                <DonutChart
-                  percent={stats.purity.totalRelapses === 0 ? 100 : Math.max(5, 100 - stats.purity.totalRelapses * 10)}
-                  color={stats.purity.totalRelapses === 0 ? PURITY_COLOR : '#FF5A5A'}
-                  size={68} stroke={6}
-                />
-                <View style={s.donutInner}>
-                  <Text style={[s.donutPct, { color: stats.purity.totalRelapses === 0 ? PURITY_COLOR : '#FF5A5A', fontSize: 14 }]}>
+              <View style={s.purityFraction}>
+                <View style={s.purityFractionTop}>
+                  <Text style={[s.purityFractionNum, { color: stats.purity.totalRelapses === 0 ? PURITY_COLOR : '#FF5A5A' }]}>
                     {stats.purity.totalRelapses}
                   </Text>
+                  <Text style={s.purityFractionSlash}>/</Text>
+                  <Text style={[s.purityFractionNum, { color: PURITY_COLOR }]}>
+                    {stats.consistency.activeDays}
+                  </Text>
                 </View>
+                <Text style={s.purityFractionLabel}>Relapses / Active Days</Text>
               </View>
             </View>
-            <View style={s.statsRow}>
-              <View style={s.statCell}>
-                <Text style={s.statValue}>
-                  {stats.purity.totalRelapses}
-                </Text>
-                <Text style={s.statLabel}>Relapses</Text>
+            {!!stats.purity.insightNote && (
+              <View style={s.purityInsightRow}>
+                <Text style={s.purityInsightText}>{stats.purity.insightNote}</Text>
               </View>
-            </View>
-          </View>
+            )}
+          </View>}
 
           {/* ── Journaling ────────────────────────── */}
           <View style={s.card}>
@@ -385,8 +607,42 @@ const AnalyticsScreen = () => {
           </View>
 
           <View style={{ height: 52 }} />
+          </>
+          )}
         </ScrollView>
       )}
+
+      {/* Month Picker Modal */}
+      <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+        <TouchableOpacity style={s.filterOverlay} activeOpacity={1} onPress={() => setShowMonthPicker(false)}>
+          <View style={s.filterSheet} onStartShouldSetResponder={() => true}>
+            <View style={s.filterSheetHeader}>
+              <Text style={s.filterSheetTitle}>Select Month</Text>
+              <TouchableOpacity onPress={() => setShowMonthPicker(false)}>
+                <Ionicons name="close" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={s.monthPickerList} showsVerticalScrollIndicator={false}>
+              {[...(monthlyData?.availableMonths ?? [])].reverse().map((m) => {
+                const selected = m.value === monthlyData?.selectedMonth;
+                return (
+                  <TouchableOpacity
+                    key={m.value}
+                    style={[s.monthPickerItem, selected && s.monthPickerItemActive]}
+                    onPress={() => handleMonthSelect(m.value)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.monthPickerItemText, selected && s.monthPickerItemTextActive]}>
+                      {m.label}
+                    </Text>
+                    {selected && <Ionicons name="checkmark" size={18} color={colors.text} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Filter Modal */}
       <Modal visible={showFilterModal} transparent animationType="slide" onRequestClose={() => setShowFilterModal(false)}>
@@ -434,11 +690,10 @@ const s = StyleSheet.create({
   empty: { fontSize: 14, color: colors.textMuted },
 
   header: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.lg, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  back: { width: 36 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
   filterBtn: { width: 36, alignItems: 'flex-end', position: 'relative' },
   filterDot: { position: 'absolute', top: 0, right: 0, width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
@@ -448,6 +703,41 @@ const s = StyleSheet.create({
   periodDateText: { fontSize: 11, color: '#555', marginTop: 2 },
 
   scroll: { paddingHorizontal: 16, paddingTop: 16, gap: 12 },
+
+  activityCard: {
+    backgroundColor: '#070707', borderRadius: 18, borderWidth: 1, borderColor: '#1e1e1e', padding: 14,
+  },
+  monthlyToolbar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  monthSelector: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  monthSelectorText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  monthScoreText: { fontSize: 14, fontWeight: '700' },
+  monthScoreGreen: { color: colors.text },
+  monthScoreMuted: { color: colors.textMuted, fontWeight: '600' },
+  pillarGrid: { gap: 0 },
+  halfGrid: { gap: 3 },
+  halfGridSpaced: { marginTop: 4 },
+  halfDivider: { height: 1, backgroundColor: '#1a1a1a', marginBottom: 10, marginTop: 6 },
+  halfRow: { flexDirection: 'row', alignItems: 'center' },
+  pillarIconCol: { width: 22, alignItems: 'center', justifyContent: 'center' },
+  halfDayCol: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 16 },
+  halfDayNum: { fontSize: 8, fontWeight: '600', color: '#555', marginBottom: 3 },
+  pillarDot: { width: 7, height: 7, borderRadius: 4, borderWidth: 1 },
+  monthPickerList: { maxHeight: 320 },
+  monthPickerItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+  },
+  monthPickerItemActive: { backgroundColor: '#111' },
+  monthPickerItemText: { fontSize: 14, color: '#888' },
+  monthPickerItemTextActive: { color: colors.text, fontWeight: '600' },
+  sectionLoader: { marginVertical: 20 },
+  inlineLoader: { marginVertical: 8 },
+  sectionEmpty: { fontSize: 12, color: colors.textMuted, textAlign: 'center', marginVertical: 16 },
+  statsLoader: { paddingVertical: 40, alignItems: 'center' },
 
   // Overview tiles
   tilesRow: { flexDirection: 'row', gap: 10 },
@@ -542,6 +832,18 @@ const s = StyleSheet.create({
   filterClearText: { color: '#666', fontSize: 14, fontWeight: '600' },
   filterApplyBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.text, alignItems: 'center' },
   filterApplyText: { color: colors.background, fontSize: 14, fontWeight: '700' },
+  purityFraction: { alignItems: 'center', justifyContent: 'center' },
+  purityFractionTop: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  purityFractionNum: { fontSize: 22, fontWeight: '800' },
+  purityFractionSlash: { fontSize: 18, fontWeight: '400', color: '#555', marginHorizontal: 2 },
+  purityFractionLabel: { fontSize: 10, color: colors.textMuted, marginTop: 3, textAlign: 'center' },
+  purityInsightRow: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#1e1e1e',
+  },
+  purityInsightText: { fontSize: 12, color: '#666', lineHeight: 18 },
 });
 
 export default AnalyticsScreen;

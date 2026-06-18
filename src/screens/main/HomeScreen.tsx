@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, Image, Animated, Modal, Dimensions,
@@ -12,6 +12,7 @@ import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
+import { useMainBoot } from '../../context/MainBootContext';
 import { colors, spacing, typography } from '../../theme';
 import DailyLogModal from '../../components/modals/DailyLogModal';
 import BicepIcon from '../../../assets/bicep.svg';
@@ -22,7 +23,8 @@ import GrowIcon from '../../../assets/grow.svg';
 import { activityLogsApi } from '../../api/activityLogs';
 import { activitiesApi } from '../../api/activities';
 import { companionApi } from '../../api';
-import type { ActivityLogEntry, CompanionMessage } from '../../types';
+import { journalsApi } from '../../api/journals';
+import type { ActivityLogEntry, CompanionMessage, TodayGoalResponse } from '../../types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -44,11 +46,46 @@ const SECTION_LABELS: Record<string, string> = {
   power: 'Power', craft: 'Craft', mind: 'Mind', purity: 'Purity',
 };
 
+const SECTION_ORDER = ['power', 'craft', 'purity', 'mind'] as const;
+
+type RecordsFilter = {
+  days: number;
+  sections: string[];
+  fromDate: Date | null;
+  toDate: Date | null;
+  all: boolean;
+};
+
+const getDefaultSections = (female: boolean) =>
+  female ? ['power', 'craft', 'mind'] : ['power', 'craft', 'purity', 'mind'];
+
+const makeDefaultFilter = (female: boolean): RecordsFilter => ({
+  days: 7,
+  sections: getDefaultSections(female),
+  fromDate: null,
+  toDate: null,
+  all: false,
+});
+
+const normalizeLogDate = (date: string) => (date.includes('T') ? date.split('T')[0] : date);
+
+const groupLogsByDate = (logs: ActivityLogEntry[], sections: string[]) => {
+  const records: Record<string, ActivityLogEntry[]> = {};
+  logs.forEach((log) => {
+    if (!sections.includes(log.section)) return;
+    const dateStr = normalizeLogDate(log.date);
+    if (!records[dateStr]) records[dateStr] = [];
+    records[dateStr].push(log);
+  });
+  return records;
+};
+
 const getCompanionColor = (name: string): string => {
   const colorMap: { [key: string]: string } = {
     'Captain Blackvein': '#3DFF86',
-    'Tharok Warborn': '#FFC857',
     'Arkan Veylor': '#FF5A5A',
+    'Zedra Morvain': '#C77DFF',
+    'Tharok Warborn': '#FFC857',
     'Seris Astraea': '#54A9FF',
     Monk: '#FFC857',
     Warrior: '#FF5A5A',
@@ -76,6 +113,15 @@ const HomeScreen = () => {
   const navigation = useNavigation();
   const { user } = useAuth();
   const { profile, fetchProfile, isLoadingProfile } = useUser();
+  const { setHomeReady } = useMainBoot();
+  const isFemale = profile?.gender === 'female';
+  const mindSectionActive = profile?.mindSectionActive ?? true;
+  const visibleStreakSections = SECTION_ORDER.filter((section) => {
+    if (section === 'mind' && !mindSectionActive) return false;
+    if (section === 'purity' && isFemale) return false;
+    return true;
+  });
+  const streakExpandedHeight = 16 + visibleStreakSections.length * 27;
   const [last7DaysData, setLast7DaysData] = useState<any>(null);
   const [isLoadingLast7Days, setIsLoadingLast7Days] = useState(false);
   const [isStreakCollapsed, setIsStreakCollapsed] = useState(false);
@@ -84,6 +130,7 @@ const HomeScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [todayGoal, setTodayGoal] = useState<TodayGoalResponse | null>(null);
   useEffect(() => {
     AsyncStorage.getItem('journey_tooltip_dismissed').then((val) => {
       if (!val) setShowTooltip(true);
@@ -100,12 +147,13 @@ const HomeScreen = () => {
   const [recordsData, setRecordsData] = useState<Record<string, ActivityLogEntry[]>>({});
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const defaultSections = ['power', 'craft', 'purity', 'mind'] as string[];
-  const [activeFilter, setActiveFilter] = useState({ days: 7, sections: defaultSections, fromDate: null as Date | null, toDate: null as Date | null });
-  const [pendingFilter, setPendingFilter] = useState({ days: 7, sections: defaultSections, fromDate: null as Date | null, toDate: null as Date | null });
+  const [activeFilter, setActiveFilter] = useState<RecordsFilter>(() => makeDefaultFilter(false));
+  const [pendingFilter, setPendingFilter] = useState<RecordsFilter>(() => makeDefaultFilter(false));
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
-  const isFilterActive = activeFilter.days !== 7 || activeFilter.sections.length < 4 || !!(activeFilter.fromDate && activeFilter.toDate);
+  const isFilterActive = isFemale
+    ? activeFilter.all || activeFilter.days !== 7 || activeFilter.sections.length < 3 || !!(activeFilter.fromDate && activeFilter.toDate)
+    : activeFilter.all || activeFilter.days !== 7 || activeFilter.sections.length < 4 || !!(activeFilter.fromDate && activeFilter.toDate);
 
   // Companion notification
   const [notifMessage, setNotifMessage] = useState<CompanionMessage | null>(null);
@@ -123,35 +171,73 @@ const HomeScreen = () => {
   const recordWasEdited = useRef(false);
   const onRecordEdited = useCallback(() => { recordWasEdited.current = true; }, []);
 
-  const loadRecords = useCallback(async (days: number = 7, sections: string[] = ['power', 'craft', 'purity', 'mind'], fromDate?: Date | null, toDate?: Date | null) => {
+  const loadTodayGoal = useCallback(async () => {
+    try {
+      const { data } = await journalsApi.getTodayGoal();
+      setTodayGoal(data.show ? data : null);
+    } catch {
+      setTodayGoal(null);
+    }
+  }, []);
+
+  const dismissTodayGoal = useCallback(async () => {
+    setTodayGoal(null);
+    try {
+      await journalsApi.dismissTodayGoal();
+    } catch {}
+  }, []);
+
+  const refreshSingleDate = useCallback(async (date: Date) => {
+    const dateStr = date.toLocaleDateString('en-CA');
+    try {
+      const { data } = await activitiesApi.getLog(dateStr);
+      setRecordsData(prev => {
+        if (data.length === 0) return prev;
+        const filtered = (data as ActivityLogEntry[]).filter(log =>
+          activeFilter.sections.includes(log.section)
+        );
+        if (filtered.length === 0) return prev;
+        return { ...prev, [dateStr]: filtered };
+      });
+    } catch {}
+  }, [activeFilter.sections]);
+
+  const loadRecords = useCallback(async (filter: RecordsFilter) => {
     setIsLoadingRecords(true);
     try {
-      const dates: string[] = [];
-      if (fromDate && toDate) {
-        const cur = new Date(fromDate);
-        cur.setHours(0, 0, 0, 0);
-        const end = new Date(toDate);
-        end.setHours(0, 0, 0, 0);
-        while (cur <= end) {
-          dates.push(cur.toLocaleDateString('en-CA'));
-          cur.setDate(cur.getDate() + 1);
-        }
+      const { days, sections, fromDate, toDate, all } = filter;
+
+      if (all) {
+        const { data } = await activitiesApi.getAllLogs();
+        setRecordsData(groupLogsByDate(data as ActivityLogEntry[], sections));
       } else {
-        for (let i = 0; i < days; i++) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          dates.push(d.toLocaleDateString('en-CA'));
+        const dates: string[] = [];
+        if (fromDate && toDate) {
+          const cur = new Date(fromDate);
+          cur.setHours(0, 0, 0, 0);
+          const end = new Date(toDate);
+          end.setHours(0, 0, 0, 0);
+          while (cur <= end) {
+            dates.push(cur.toLocaleDateString('en-CA'));
+            cur.setDate(cur.getDate() + 1);
+          }
+        } else {
+          for (let i = 0; i < days; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            dates.push(d.toLocaleDateString('en-CA'));
+          }
         }
+        const results = await Promise.allSettled(dates.map(date => activitiesApi.getLog(date)));
+        const records: Record<string, ActivityLogEntry[]> = {};
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value.data.length > 0) {
+            const filtered = (result.value.data as ActivityLogEntry[]).filter(log => sections.includes(log.section));
+            if (filtered.length > 0) records[dates[idx]] = filtered;
+          }
+        });
+        setRecordsData(records);
       }
-      const results = await Promise.allSettled(dates.map(date => activitiesApi.getLog(date)));
-      const records: Record<string, ActivityLogEntry[]> = {};
-      results.forEach((result, idx) => {
-        if (result.status === 'fulfilled' && result.value.data.length > 0) {
-          const filtered = (result.value.data as ActivityLogEntry[]).filter(log => sections.includes(log.section));
-          if (filtered.length > 0) records[dates[idx]] = filtered;
-        }
-      });
-      setRecordsData(records);
     } catch {}
     setIsLoadingRecords(false);
   }, []);
@@ -163,7 +249,7 @@ const HomeScreen = () => {
       setLast7DaysData(response.data);
 
       // Check if user has any logs
-      const hasAnyLogs = (['power', 'craft', 'mind', 'purity'] as const).some((section) => {
+      const hasAnyLogs = SECTION_ORDER.some((section) => {
         const entries = response.data?.[section];
         if (Array.isArray(entries)) {
           return entries.some((entry: any) => entry.didUserDo === true || entry.didUserRelapse === true);
@@ -181,7 +267,10 @@ const HomeScreen = () => {
   useEffect(() => {
     const init = async () => {
       await fetchProfile();
-      await Promise.all([loadData(), loadRecords(7)]);
+      const defaultFilter = makeDefaultFilter(isFemale);
+      setActiveFilter(defaultFilter);
+      setPendingFilter(defaultFilter);
+      await Promise.all([loadData(), loadRecords(defaultFilter), loadTodayGoal()]);
       setLoading(false);
     };
     init();
@@ -189,11 +278,11 @@ const HomeScreen = () => {
 
   useEffect(() => {
     Animated.timing(animatedHeight, {
-      toValue: isStreakCollapsed ? 0 : 120,
+      toValue: isStreakCollapsed ? 0 : streakExpandedHeight,
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [isStreakCollapsed]);
+  }, [isStreakCollapsed, streakExpandedHeight]);
 
   const showNotif = useCallback((next: CompanionMessage) => {
     setNotifMessage(next);
@@ -225,12 +314,17 @@ const HomeScreen = () => {
     isViewingRecord.current = false;
     recordWasEdited.current = false;
 
+    loadTodayGoal().catch(() => {});
+
     // Skip heavy reload when returning from RecordDetail with no edits made
     if (!fromRecordView || hadEdit) {
+      const defaultFilter = makeDefaultFilter(isFemale);
+      setActiveFilter(defaultFilter);
+      setPendingFilter(defaultFilter);
       Promise.all([
         fetchProfile(),
         loadData(),
-        loadRecords(activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate)
+        loadRecords(defaultFilter),
       ]).catch(() => {});
     }
 
@@ -245,7 +339,12 @@ const HomeScreen = () => {
         }
       }
     }).catch(() => {});
-  }, [showNotif, activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate]));
+
+    return () => {
+      // If user navigates away while modal is open, reset it so FAB works on return
+      setShowLogModal(false);
+    };
+  }, [showNotif, isFemale, loadData, loadRecords, fetchProfile, loadTodayGoal]));
 
   const dismissNotif = () => {
     Animated.timing(notifSlide, {
@@ -280,7 +379,10 @@ const HomeScreen = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchProfile(), loadData(), loadRecords(activeFilter.days, activeFilter.sections, activeFilter.fromDate, activeFilter.toDate)]);
+    const defaultFilter = makeDefaultFilter(isFemale);
+    setActiveFilter(defaultFilter);
+    setPendingFilter(defaultFilter);
+    await Promise.all([fetchProfile(), loadData(), loadRecords(defaultFilter), loadTodayGoal()]);
     setRefreshing(false);
   };
 
@@ -311,7 +413,6 @@ const HomeScreen = () => {
 
   const streaks = profile?.stats?.currentStreaks;
   const totalPoints = profile?.stats?.totalPoints || 0;
-  const mindSectionActive = profile?.mindSectionActive ?? true;
   const username = profile?.username || user?.email?.split('@')[0] || 'Champion';
   const selectedAvatar = profile?.avatars?.find(a => a.isSelected);
   const profileImageUrl = selectedAvatar?.profileImageUrl;
@@ -319,14 +420,12 @@ const HomeScreen = () => {
   const avatarBorderColor = getAvatarBorderColor(avatarSlug);
   const avatarHasShadow = getAvatarHasShadow(avatarSlug);
 
+  useLayoutEffect(() => {
+    if (!loading) setHomeReady();
+  }, [loading, setHomeReady]);
+
   if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.loadingCenter}>
-          <ActivityIndicator color={colors.text} size="large" />
-        </View>
-      </SafeAreaView>
-    );
+    return <View style={styles.bootPlaceholder} />;
   }
 
   return (
@@ -393,6 +492,22 @@ const HomeScreen = () => {
             })()}
           </TouchableOpacity>
         </View>
+
+        {todayGoal?.goal ? (
+          <View style={styles.todayGoalCard}>
+            <View style={styles.todayGoalHeader}>
+              <Text style={styles.todayGoalHeading}>{todayGoal.heading || "Today's goal"}</Text>
+              <TouchableOpacity
+                onPress={dismissTodayGoal}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={14} color="#555" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.todayGoalText} numberOfLines={3}>{todayGoal.goal}</Text>
+          </View>
+        ) : null}
 
         {/* Profile */}
         <View style={styles.profileRow}>
@@ -477,10 +592,7 @@ const HomeScreen = () => {
               ))}
             </View>
 
-            {(['power','craft','mind','purity'] as const).filter(section => {
-              if (section === 'mind' && !mindSectionActive) return false;
-              return true;
-            }).map(
+            {visibleStreakSections.map(
               (section) => (
                 <View
                   key={section}
@@ -563,27 +675,34 @@ const HomeScreen = () => {
             Object.entries(recordsData)
               .sort(([a], [b]) => b.localeCompare(a))
               .map(([date, logs]) => {
-                const sectionMap = new Map<string, ActivityLogEntry>();
+                const sectionLogsMap = new Map<string, ActivityLogEntry[]>();
                 for (const log of logs) {
-                  if (!sectionMap.has(log.section) || log.didUserDo) sectionMap.set(log.section, log);
+                  const existing = sectionLogsMap.get(log.section) ?? [];
+                  existing.push(log);
+                  sectionLogsMap.set(log.section, existing);
                 }
                 return (
                   <View key={date} style={styles.recordsDateGroup}>
                     <Text style={styles.recordsDateLabel}>{formatRecordDate(date)}</Text>
                     <View style={styles.recordsList}>
-                      {(['power', 'craft', 'mind', 'purity'] as const)
-                        .filter(sec => sectionMap.has(sec) && (sec !== 'mind' || mindSectionActive))
+                      {SECTION_ORDER
+                        .filter(sec => sectionLogsMap.has(sec) && (sec !== 'mind' || mindSectionActive) && (sec !== 'purity' || !isFemale))
                         .map(sec => {
-                          const log = sectionMap.get(sec)!;
+                          const sectionLogs = sectionLogsMap.get(sec) ?? [];
+                          const log = sectionLogs.find((l) => l.didUserDo) ?? sectionLogs[0];
                           const Icon = SECTION_ICONS[sec];
                           const completed = sec === 'purity' ? (log.relapseCount ?? 0) === 0 : !!log.didUserDo;
-                          const hoursStr = log.hours && log.hours > 0
-                            ? `${Math.floor(log.hours)}h${Math.round((log.hours % 1) * 60) > 0 ? ` ${Math.round((log.hours % 1) * 60)}m` : ''}`
-                            : null;
                           const isPurity = sec === 'purity';
+                          const activityNames = sectionLogs
+                            .filter((l) => l.activityName && (sec === 'purity' || l.didUserDo))
+                            .map((l) => l.activityName!)
+                            .join(', ');
                           const statusText = isPurity
                             ? ((log.relapseCount ?? 0) === 0 ? 'Clean' : `${log.relapseCount} relapse${(log.relapseCount ?? 0) !== 1 ? 's' : ''}`)
-                            : (completed ? 'Completed' : 'Missed');
+                            : (activityNames || (completed ? 'Completed' : 'Missed'));
+                          const points = sectionLogs.reduce((sum, l) => sum + (l.points ?? 0), 0);
+                          const pointsText = points > 0 ? `+${points}` : `${points}`;
+                          const pointsColor = points > 0 ? '#22c55e' : '#ef4444';
                           return (
                             <TouchableOpacity
                               key={sec}
@@ -601,8 +720,7 @@ const HomeScreen = () => {
                                 <Text style={styles.recordRowSection}>{SECTION_LABELS[sec]}</Text>
                                 <Text style={styles.recordRowStatus} numberOfLines={1}>{statusText}</Text>
                               </View>
-                              {hoursStr && <Text style={styles.recordRowHours}>{hoursStr}</Text>}
-                              <Ionicons name="eye-outline" size={16} color="#555" style={{ marginLeft: 8 }} />
+                              <Text style={[styles.recordRowPoints, { color: pointsColor }]}>{pointsText}</Text>
                             </TouchableOpacity>
                           );
                         })}
@@ -651,7 +769,7 @@ const HomeScreen = () => {
 
             <Text style={styles.filterSectionLabel}>Sections</Text>
             <View style={styles.filterChipsRow}>
-              {(['power', 'craft', 'purity', 'mind'] as const).filter(sec => sec !== 'mind' || mindSectionActive).map(sec => {
+              {SECTION_ORDER.filter(sec => (sec !== 'mind' || mindSectionActive) && (sec !== 'purity' || !isFemale)).map(sec => {
                 const on = pendingFilter.sections.includes(sec);
                 return (
                   <TouchableOpacity
@@ -671,13 +789,20 @@ const HomeScreen = () => {
 
             <Text style={styles.filterSectionLabel}>Quick Range</Text>
             <View style={styles.filterChipsRow}>
+              <TouchableOpacity
+                style={[styles.filterChip, pendingFilter.all && !pendingFilter.fromDate && styles.filterChipActive]}
+                onPress={() => setPendingFilter(prev => ({ ...prev, all: true, days: 7, fromDate: null, toDate: null }))}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, pendingFilter.all && !pendingFilter.fromDate && styles.filterChipTextActive]}>All</Text>
+              </TouchableOpacity>
               {([7, 14, 30] as const).map(days => {
-                const on = !pendingFilter.fromDate && pendingFilter.days === days;
+                const on = !pendingFilter.all && !pendingFilter.fromDate && pendingFilter.days === days;
                 return (
                   <TouchableOpacity
                     key={days}
                     style={[styles.filterChip, on && styles.filterChipActive]}
-                    onPress={() => setPendingFilter(prev => ({ ...prev, days, fromDate: null, toDate: null }))}
+                    onPress={() => setPendingFilter(prev => ({ ...prev, all: false, days, fromDate: null, toDate: null }))}
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.filterChipText, on && styles.filterChipTextActive]}>{days} days</Text>
@@ -715,7 +840,7 @@ const HomeScreen = () => {
               </TouchableOpacity>
               {(pendingFilter.fromDate || pendingFilter.toDate) && (
                 <TouchableOpacity
-                  onPress={() => setPendingFilter(prev => ({ ...prev, fromDate: null, toDate: null, days: 7 }))}
+                  onPress={() => setPendingFilter(prev => ({ ...prev, fromDate: null, toDate: null, days: 7, all: false }))}
                   style={styles.filterDateClear}
                   activeOpacity={0.7}
                 >
@@ -728,9 +853,10 @@ const HomeScreen = () => {
               <TouchableOpacity
                 style={styles.filterClearBtn}
                 onPress={() => {
-                  setPendingFilter({ days: 7, sections: ['power', 'craft', 'purity', 'mind'], fromDate: null, toDate: null });
-                  setActiveFilter({ days: 7, sections: ['power', 'craft', 'purity', 'mind'], fromDate: null, toDate: null });
-                  loadRecords(7, ['power', 'craft', 'purity', 'mind'], null, null);
+                  const clearFilter = makeDefaultFilter(isFemale);
+                  setPendingFilter(clearFilter);
+                  setActiveFilter(clearFilter);
+                  loadRecords(clearFilter);
                   setShowFilterModal(false);
                 }}
                 activeOpacity={0.7}
@@ -740,11 +866,12 @@ const HomeScreen = () => {
               <TouchableOpacity
                 style={styles.filterApplyBtn}
                 onPress={() => {
-                  const f = pendingFilter.sections.length === 0
-                    ? { ...pendingFilter, sections: ['power', 'craft', 'purity', 'mind'] }
+                  const allSections = getDefaultSections(isFemale);
+                  const f: RecordsFilter = pendingFilter.sections.length === 0
+                    ? { ...pendingFilter, sections: allSections }
                     : pendingFilter;
                   setActiveFilter(f);
-                  loadRecords(f.days, f.sections, f.fromDate, f.toDate);
+                  loadRecords(f);
                   setShowFilterModal(false);
                 }}
                 activeOpacity={0.85}
@@ -765,7 +892,7 @@ const HomeScreen = () => {
           onChange={(event, date) => {
             setShowFromPicker(false);
             if (event.type === 'set' && date) {
-              setPendingFilter(prev => ({ ...prev, fromDate: date, days: 0 }));
+              setPendingFilter(prev => ({ ...prev, fromDate: date, days: 0, all: false }));
             }
           }}
         />
@@ -780,7 +907,7 @@ const HomeScreen = () => {
           onChange={(event, date) => {
             setShowToPicker(false);
             if (event.type === 'set' && date) {
-              setPendingFilter(prev => ({ ...prev, toDate: date, days: 0 }));
+              setPendingFilter(prev => ({ ...prev, toDate: date, days: 0, all: false }));
             }
           }}
         />
@@ -791,8 +918,19 @@ const HomeScreen = () => {
       <DailyLogModal
         visible={showLogModal}
         onClose={() => { setShowLogModal(false); onRefresh(); }}
-        onComplete={() => { setShowLogModal(false); onRefresh(); }}
-        onNavigateToMind={() => navigation.navigate('Pillars' as never)}
+        onComplete={(loggedDate) => {
+          setShowLogModal(false);
+          if (loggedDate) {
+            refreshSingleDate(loggedDate);
+            loadData();
+          } else {
+            onRefresh();
+          }
+        }}
+        onNavigateToMind={() => navigation.getParent()?.navigate('Pillars', { tab: 'Mind' })}
+        onNavigateToPillars={(section) => {
+          navigation.getParent()?.navigate('Pillars', { tab: section === 'power' ? 'Power' : 'Craft' });
+        }}
       />
     </SafeAreaView>
   );
@@ -800,6 +938,7 @@ const HomeScreen = () => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+  bootPlaceholder: { flex: 1, backgroundColor: '#000000' },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   topBar:{
     flexDirection:'row',
@@ -838,6 +977,32 @@ const styles = StyleSheet.create({
     width:44,
     height:44,
     borderRadius:22,
+  },
+  todayGoalCard: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: spacing.sm,
+  },
+  todayGoalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  todayGoalHeading: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#666',
+    letterSpacing: 0.3,
+  },
+  todayGoalText: {
+    fontSize: 12,
+    color: '#aaa',
+    lineHeight: 16,
   },
   profileRow:{
     flexDirection:'row',
@@ -987,17 +1152,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    paddingLeft: 4,
+    gap: 10,
+  },
+  recordRowPoints: {
+    fontSize: 14,
+    fontWeight: '700',
+    minWidth: 36,
+    textAlign: 'right',
+    flexShrink: 0,
   },
   recordRowIcon: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: '#1a1a1a',
     alignItems: 'center', justifyContent: 'center',
     marginRight: 12,
+    flexShrink: 0,
   },
   recordRowBody: { flex: 1, gap: 2 },
   recordRowSection: { color: '#fff', fontSize: 14, fontWeight: '700' },
   recordRowStatus: { color: '#666', fontSize: 12 },
-  recordRowHours: { color: '#888', fontSize: 12, fontWeight: '600' },
 
   // Filter modal
   filterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },

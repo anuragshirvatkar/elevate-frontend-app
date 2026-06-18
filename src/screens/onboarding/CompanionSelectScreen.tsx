@@ -19,6 +19,7 @@ import Button from '../../components/common/Button';
 import { colors, spacing, typography } from '../../theme';
 import { useAlert } from '../../context/AlertContext';
 import type { CompanionDto } from '../../types';
+import { getCompanionColor, sortCompanions } from '../../utils/companions';
 
 const CompanionSelectScreen: React.FC<
   OnboardingStackScreenProps<'CompanionSelect'>
@@ -34,19 +35,6 @@ const CompanionSelectScreen: React.FC<
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const pendingScrollIndex = useRef<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-
-  const getCompanionColor = (name: string): string => {
-    const colorMap: { [key: string]: string } = {
-      'Captain Blackvein': '#3DFF86',
-      'Tharok Warborn': '#FFC857',
-      'Arkan Veylor': '#FF5A5A',
-      'Seris Astraea': '#54A9FF',
-      Monk: '#FFC857',
-      Warrior: '#FF5A5A',
-      Sage: '#54A9FF',
-    };
-    return colorMap[name] || '#3DFF86';
-  };
 
   const truncateDescription = (description: string): string => {
     const emDashIndex = description.indexOf('—');
@@ -64,22 +52,23 @@ const CompanionSelectScreen: React.FC<
           setupApi.getProgress(),
         ]);
 
-        setCompanions(options.companions);
+        const sortedCompanions = sortCompanions(options.companions);
+        setCompanions(sortedCompanions);
 
         // Always load the previously selected companion if it exists
         if (progress.selectedCompanion) {
           const prevSelected = progress.selectedCompanion;
           setSelected(prevSelected.id);
           // Find the index of the selected companion to scroll to it
-          const selectedIndex = options.companions.findIndex(
+          const selectedIndex = sortedCompanions.findIndex(
             (c) => c.id === prevSelected.id
           );
           if (selectedIndex !== -1) {
             setCurrentIndex(selectedIndex);
             pendingScrollIndex.current = selectedIndex;
           }
-        } else if (options.companions.length > 0) {
-          setSelected(options.companions[0].id);
+        } else if (sortedCompanions.length > 0) {
+          setSelected(sortedCompanions[0].id);
         }
 
         // Skip auto-routing when user intentionally navigated back
@@ -102,6 +91,12 @@ const CompanionSelectScreen: React.FC<
             return;
           }
 
+          if (!progress.gender) {
+            console.log('DOB set, no gender → GenderSelect');
+            navigation.replace('GenderSelect');
+            return;
+          }
+
           // Check actual completion by looking for user-selected data
           const powerDone = (progress.sections?.power?.activities?.length ?? 0) > 0;
           const craftDone = (progress.sections?.craft?.activities?.length ?? 0) > 0;
@@ -110,7 +105,7 @@ const CompanionSelectScreen: React.FC<
             !!(progress.sections?.mind as any)?.skipMind;
 
           if (!powerDone) {
-            console.log('DOB set, no power activities → SetupPower');
+            console.log('Gender set, no power activities → SetupPower');
             navigation.replace('SetupPower');
             return;
           }
@@ -208,13 +203,13 @@ const CompanionSelectScreen: React.FC<
               strokeWidth={3}
               fill="none"
               strokeDasharray={2 * Math.PI * 16}
-              strokeDashoffset={2 * Math.PI * 16 * (1 - 1 / 5)}
+              strokeDashoffset={2 * Math.PI * 16 * (1 - 1 / 6)}
               strokeLinecap="round"
               rotation="-90"
               origin="20, 20"
             />
           </Svg>
-          <Text style={styles.stepText}>1/5</Text>
+          <Text style={styles.stepText}>1/6</Text>
         </View>
       </View>
       <View style={styles.headerContainer}>

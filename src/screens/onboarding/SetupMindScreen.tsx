@@ -66,7 +66,10 @@ function timeDiffMinutes(t1: string, t2: string): number {
 const getCompanionColor = (name: string): string => {
   const colorMap: { [key: string]: string } = {
     'Captain Blackvein': '#3DFF86',
+    'Arkan Veylor': '#FF5A5A',
+    'Zedra Morvain': '#C77DFF',
     'Tharok Warborn': '#FFC857',
+    'Seris Astraea': '#54A9FF',
     'Riven the Silent': '#FF5A5A',
     'Nova Emberlight': '#54A9FF',
   };
@@ -479,7 +482,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                 origin="20, 20"
               />
             </Svg>
-            <Text style={styles.stepText}>5/5</Text>
+            <Text style={styles.stepText}>6/6</Text>
           </View>
         </View>
 

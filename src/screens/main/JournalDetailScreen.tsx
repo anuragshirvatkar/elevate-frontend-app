@@ -23,8 +23,8 @@ const MOOD_LABELS = ['', 'Very Low', 'Low', 'Neutral', 'Good', 'Excellent'];
 
 const getCompanionColor = (name: string): string => {
   const colorMap: Record<string, string> = {
-    'Captain Blackvein': '#3DFF86', 'Tharok Warborn': '#FFC857',
-    'Arkan Veylor': '#FF5A5A', 'Seris Astraea': '#54A9FF',
+    'Captain Blackvein': '#3DFF86', 'Arkan Veylor': '#FF5A5A',
+    'Zedra Morvain': '#C77DFF', 'Tharok Warborn': '#FFC857', 'Seris Astraea': '#54A9FF',
     Monk: '#FFC857', Warrior: '#FF5A5A', Sage: '#54A9FF',
   };
   return colorMap[name] || '#3DFF86';
@@ -571,7 +571,7 @@ const JournalDetailScreen = () => {
                 (n: string) => `${n} smiles. This is what greatness looks like.`,
               ][0](companion?.name ?? 'Your companion')}</Text>
               <TouchableOpacity style={styles.pointsContinueBtn} onPress={() => { setPointsEarned(null); navigation.goBack(); }} activeOpacity={0.85}>
-                <Text style={styles.pointsContinueBtnText}>Continue →</Text>
+                <Text style={styles.pointsContinueBtnText}>Continue</Text>
               </TouchableOpacity>
             </View>
           </View>

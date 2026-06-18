@@ -16,9 +16,10 @@ import type { SupportIssueType, SupportTicket } from '../../types';
 
 const ISSUE_TYPES: { label: string; value: SupportIssueType }[] = [
   { label: 'Bug', value: 'bug' },
-  { label: 'Feature Request', value: 'feature' },
-  { label: 'Feedback', value: 'feedback' },
+  { label: 'Feature Request', value: 'feature_request' },
+  { label: 'Payment', value: 'payment' },
   { label: 'Account', value: 'account' },
+  { label: 'Feedback', value: 'feedback' },
   { label: 'Other', value: 'other' },
 ];
 

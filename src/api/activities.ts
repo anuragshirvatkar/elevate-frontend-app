@@ -13,4 +13,7 @@ export const activitiesApi = {
 
   getLog: (date: string) =>
     apiClient.get<ActivityLogEntry[]>('/activities/log', { params: { date } }),
+
+  getAllLogs: () =>
+    apiClient.get<ActivityLogEntry[]>('/activities/log', { params: { date: 'All' } }),
 };

@@ -15,7 +15,6 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { label: 'Analytics', icon: 'bar-chart-outline', screen: 'Analytics' },
   { label: 'Pillars', icon: 'layers-outline', screen: 'Pillars' },
   { label: 'Achievements', icon: 'medal-outline', screen: 'Achievements' },
   { label: 'Support', icon: 'help-circle-outline', screen: 'Support' },

@@ -1,38 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated, View, Text, Image, StyleSheet, TouchableOpacity,
-  Dimensions, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme';
+import { useInAppNotification, type InAppNotificationData } from '../../context/InAppNotificationContext';
 
-const { width } = Dimensions.get('window');
 const DISPLAY_DURATION = 5000;
 
-export interface InAppNotificationData {
-  title: string;
-  body: string;
-  companionImageUrl?: string;
+export type { InAppNotificationData };
+
+interface BannerProps {
+  /** Use safe-area top inset when rendered at the app root. */
+  useTopInset?: boolean;
 }
 
-interface Props {
-  notification: InAppNotificationData | null;
-  onDismiss: () => void;
-  onPress?: () => void;
-}
-
-const InAppNotification: React.FC<Props> = ({ notification, onDismiss, onPress }) => {
+export const InAppNotificationBanner: React.FC<BannerProps> = ({ useTopInset = false }) => {
   const insets = useSafeAreaInsets();
+  const { notification, dismissNotification, handleNotificationPress } = useInAppNotification();
   const translateY = useRef(new Animated.Value(-150)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Keep modal open during the slide-out animation, close it after
-  const [modalVisible, setModalVisible] = useState(false);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (!notification) return;
+    if (!notification) {
+      setVisible(false);
+      return;
+    }
 
-    setModalVisible(true);
+    setVisible(true);
 
     if (timerRef.current) clearTimeout(timerRef.current);
     translateY.stopAnimation();
@@ -75,71 +72,68 @@ const InAppNotification: React.FC<Props> = ({ notification, onDismiss, onPress }
         useNativeDriver: true,
       }),
     ]).start(() => {
-      setModalVisible(false);
-      onDismiss();
+      setVisible(false);
+      dismissNotification();
     });
   };
 
+  if (!visible || !notification) return null;
+
+  const top = useTopInset ? insets.top + spacing.sm : spacing.sm;
+
   return (
-    <Modal
-      visible={modalVisible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={dismiss}
-    >
-      {/* box-none lets touches pass through the transparent background */}
-      <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-        <Animated.View
-          style={[
-            styles.container,
-            {
-              top: insets.top + spacing.sm,
-              transform: [{ translateY }],
-              opacity,
-            },
-          ]}
+    <View style={[styles.host, { top }]} pointerEvents="box-none">
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.container,
+          { transform: [{ translateY }], opacity },
+        ]}
+      >
+        <TouchableOpacity
+          activeOpacity={0.92}
+          style={styles.card}
+          onPress={() => { dismiss(); handleNotificationPress(); }}
         >
-          <TouchableOpacity
-            activeOpacity={0.92}
-            style={styles.card}
-            onPress={() => { dismiss(); onPress?.(); }}
-          >
-            {notification?.companionImageUrl ? (
-              <Image
-                source={{ uri: notification.companionImageUrl }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarFallbackText}>E</Text>
-              </View>
-            )}
-
-            <View style={styles.textContainer}>
-              <Text style={styles.title} numberOfLines={1}>{notification?.title}</Text>
-              <Text style={styles.body} numberOfLines={2}>{notification?.body}</Text>
+          {notification.companionImageUrl ? (
+            <Image
+              source={{ uri: notification.companionImageUrl }}
+              style={styles.avatar}
+            />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarFallbackText}>E</Text>
             </View>
+          )}
 
-            <TouchableOpacity
-              onPress={dismiss}
-              style={styles.closeBtn}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
+          <View style={styles.textContainer}>
+            <Text style={styles.title} numberOfLines={1}>{notification.title}</Text>
+            <Text style={styles.body} numberOfLines={2}>{notification.body}</Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={dismiss}
+            style={styles.closeBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </Modal>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  host: {
     position: 'absolute',
     left: spacing.md,
     right: spacing.md,
+    zIndex: 1000,
+    elevation: 1000,
+  },
+  container: {
+    width: '100%',
   },
   card: {
     flexDirection: 'row',
@@ -205,5 +199,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+
+const InAppNotification: React.FC = () => {
+  const { modalOverlayActive } = useInAppNotification();
+  if (modalOverlayActive) return null;
+  return <InAppNotificationBanner useTopInset />;
+};
 
 export default InAppNotification;

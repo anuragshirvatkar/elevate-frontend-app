@@ -1,17 +1,24 @@
 import React from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useUser } from '../../context/UserContext';
 import { colors, spacing } from '../../theme';
 
-const PILLARS = [
+const PILLARS_ALL = [
   { label: 'Power', sub: 'Train your body' },
   { label: 'Mind', sub: 'Sharpen your thinking' },
   { label: 'Craft', sub: 'Build your skill' },
   { label: 'Purity', sub: 'Protect your energy' },
+];
+
+const PILLARS_FEMALE = [
+  { label: 'Power', sub: 'Train your body' },
+  { label: 'Mind', sub: 'Sharpen your thinking' },
+  { label: 'Craft', sub: 'Build your skill' },
 ];
 
 const PHILOSOPHY_LINES = [
@@ -30,8 +37,8 @@ const CONNECT_ITEMS: {
   {
     icon: 'logo-instagram',
     label: 'Instagram',
-    value: '@elevate42426',
-    url: 'https://instagram.com/elevate42426',
+    value: '@elevateapp1',
+    url: 'https://instagram.com/elevateapp1',
   },
   {
     icon: 'globe-outline',
@@ -43,6 +50,9 @@ const CONNECT_ITEMS: {
 
 const AboutScreen = () => {
   const navigation = useNavigation();
+  const { profile } = useUser();
+  const isFemale = profile?.gender === 'female';
+  const PILLARS = isFemale ? PILLARS_FEMALE : PILLARS_ALL;
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -58,6 +68,7 @@ const AboutScreen = () => {
 
         {/* ── Hero ── */}
         <View style={s.heroBlock}>
+          <Image source={require('../../../assets/elevate-logo.png')} style={s.heroLogo} resizeMode="contain" />
           <Text style={s.heroName}>Elevate</Text>
           <Text style={s.heroTagline}>Build yourself daily.</Text>
           <Text style={s.heroBody}>
@@ -124,10 +135,10 @@ const AboutScreen = () => {
         <View style={s.bottomBlock}>
           <Text style={s.bottomLine}>Become stronger than your excuses.</Text>
           <View style={s.bottomPillarsRow}>
-            {['Mind', 'Power', 'Craft', 'Purity'].map((p, i) => (
+            {(isFemale ? ['Mind', 'Power', 'Craft'] : ['Mind', 'Power', 'Craft', 'Purity']).map((p, i, arr) => (
               <React.Fragment key={p}>
                 <Text style={s.bottomPillar}>{p}</Text>
-                {i < 3 && <View style={s.bottomDot} />}
+                {i < arr.length - 1 && <View style={s.bottomDot} />}
               </React.Fragment>
             ))}
           </View>
@@ -158,7 +169,8 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: '600', color: '#444', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: spacing.md },
 
   // Hero
-  heroBlock: { gap: 12 },
+  heroBlock: { gap: 12, alignItems: 'center' },
+  heroLogo: { width: 72, height: 72, marginBottom: 4 },
   heroName: { fontSize: 48, fontWeight: '800', color: colors.text, letterSpacing: -2, lineHeight: 52 },
   heroTagline: { fontSize: 18, color: '#666', fontWeight: '400' },
   heroBody: { fontSize: 15, color: '#555', lineHeight: 24 },

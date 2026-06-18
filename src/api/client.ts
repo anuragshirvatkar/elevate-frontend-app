@@ -4,6 +4,8 @@ import type { RefreshResponse } from '../types';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
+export { BASE_URL };
+
 let authExpiredHandler: (() => void) | null = null;
 
 export const setAuthExpiredHandler = (handler: () => void) => {

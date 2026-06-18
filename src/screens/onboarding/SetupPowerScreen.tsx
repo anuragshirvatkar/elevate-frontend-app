@@ -79,8 +79,9 @@ const ACTIVITY_ICONS: Record<string, string> = {
 const getCompanionColor = (name: string): string => {
   const colorMap: { [key: string]: string } = {
     'Captain Blackvein': '#3DFF86',
-    'Tharok Warborn': '#FFC857',
     'Arkan Veylor': '#FF5A5A',
+    'Zedra Morvain': '#C77DFF',
+    'Tharok Warborn': '#FFC857',
     'Seris Astraea': '#54A9FF',
     Monk: '#FFC857',
     Warrior: '#FF5A5A',
@@ -303,7 +304,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
     if (selectedActivities.includes(id)) {
       setSelectedActivities((prev) => prev.filter((a) => a !== id));
     } else if (selectedActivities.length >= 3) {
-      showAlert('Max 3 activities', 'You can only select up to 3 power activities.');
+      showAlert('Max 3 activities', 'You can only select up to 3 power activities during setup.');
     } else {
       setSelectedActivities((prev) => [...prev, id]);
     }
@@ -319,7 +320,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
       setCustomActivityIds((prev) => new Set(prev).add(data.id));
       setSelectedActivities((prev) => {
         if (prev.length >= 3) return prev;
-        return [...prev, data.id];
+        return prev.includes(data.id) ? prev : [...prev, data.id];
       });
       setCustomName('');
       setCustomModalVisible(false);
@@ -452,7 +453,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.replace('DOBSelect')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.replace('GenderSelect')} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
@@ -470,13 +471,13 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                 strokeWidth={3}
                 fill="none"
                 strokeDasharray={2 * Math.PI * 16}
-                strokeDashoffset={2 * Math.PI * 16 * (1 - 3 / 5)}
+                strokeDashoffset={2 * Math.PI * 16 * (1 - 4 / 6)}
                 strokeLinecap="round"
                 rotation="-90"
                 origin="20, 20"
               />
             </Svg>
-            <Text style={styles.stepText}>3/5</Text>
+            <Text style={styles.stepText}>4/6</Text>
           </View>
         </View>
 

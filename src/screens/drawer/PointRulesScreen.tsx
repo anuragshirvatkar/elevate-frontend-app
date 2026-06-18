@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
 import BicepIcon from '../../../assets/bicep.svg';
 import BrainIcon from '../../../assets/brain.svg';
@@ -95,6 +96,9 @@ const getPointColor = (pts: string) => {
 
 const PointRulesScreen = () => {
   const navigation = useNavigation();
+  const { profile } = useUser();
+  const isFemale = profile?.gender === 'female';
+  const visibleSections = isFemale ? SECTIONS.filter(s => s.key !== 'purity') : SECTIONS;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -110,7 +114,7 @@ const PointRulesScreen = () => {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {SECTIONS.map((section, sIdx) => (
+        {visibleSections.map((section, sIdx) => (
           <View key={section.key}>
             {/* Section label */}
             <View style={styles.sectionHeader}>
@@ -140,7 +144,7 @@ const PointRulesScreen = () => {
               </View>
             ))}
 
-            {sIdx < SECTIONS.length - 1 && <View style={styles.separator} />}
+            {sIdx < visibleSections.length - 1 && <View style={styles.separator} />}
           </View>
         ))}
 
