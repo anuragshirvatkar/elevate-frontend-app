@@ -139,6 +139,13 @@ export interface LogActivityDto {
   images?: string[];
 }
 
+export interface LogActivityResponse {
+  success: boolean;
+  message: string;
+  activityLogId: string;
+  points?: number;
+}
+
 export interface ActivityLogEntry {
   id: string;
   section: LogSection;

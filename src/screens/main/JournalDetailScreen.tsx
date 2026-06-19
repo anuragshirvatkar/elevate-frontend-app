@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, PanResponder, Image, Modal,
+  ScrollView, ActivityIndicator, PanResponder, Image,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -13,6 +13,7 @@ import { colors, spacing, typography, radius } from '../../theme';
 import type { JournalEntry, CompanionDto } from '../../types';
 import { format, parseISO } from 'date-fns';
 import { playPopUpSound } from '../../utils/playSound';
+import { CompanionPointsPopup, COMPANION_GAIN_MSGS } from '../../components/common/CompanionPointsPopup';
 
 type JournalDetailRouteParams = { entry?: JournalEntry; isNewEntry?: boolean };
 type JournalDetailRouteProp = RouteProp<{ JournalDetail: JournalDetailRouteParams }, 'JournalDetail'>;
@@ -552,31 +553,16 @@ const JournalDetailScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {pointsEarned !== null && (
-        <Modal transparent animationType="fade" visible={pointsEarned !== null}>
-          <View style={styles.pointsOverlay}>
-            <View style={styles.pointsCard}>
-              <View style={[styles.pointsCompanionRing, { borderColor: getCompanionColor(companion?.name || '') + '99' }]}>
-                {companion?.image && (
-                  <Image source={{ uri: companion.image }} style={styles.pointsCompanionImg} resizeMode="cover" />
-                )}
-              </View>
-              <Text style={[styles.pointsBadge, { color: colors.success }]}>+{pointsEarned} pts</Text>
-              <Text style={styles.pointsTitle}>Points earned!</Text>
-              <Text style={styles.pointsSubtitle}>{[
-                (n: string) => `${n} is proud of you. Keep showing up.`,
-                (n: string) => `${n} is impressed. Keep the streak alive.`,
-                (n: string) => `${n} sees your dedication. Don't stop now.`,
-                (n: string) => `${n} nods in approval. You're building real momentum.`,
-                (n: string) => `${n} smiles. This is what greatness looks like.`,
-              ][0](companion?.name ?? 'Your companion')}</Text>
-              <TouchableOpacity style={styles.pointsContinueBtn} onPress={() => { setPointsEarned(null); navigation.goBack(); }} activeOpacity={0.85}>
-                <Text style={styles.pointsContinueBtnText}>Continue</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
+      <CompanionPointsPopup
+        visible={pointsEarned !== null}
+        points={pointsEarned ?? 0}
+        companion={companion}
+        subtitle={COMPANION_GAIN_MSGS[0](companion?.name ?? 'Your companion')}
+        onContinue={() => {
+          setPointsEarned(null);
+          navigation.goBack();
+        }}
+      />
 
       {/* Header: Back left, Date text right */}
       <View style={styles.header}>
@@ -737,30 +723,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   nextBtnText: { color: colors.background, fontSize: 15, fontWeight: '700' },
-
-  // Points popup
-  pointsOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
-    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
-  },
-  pointsCard: {
-    backgroundColor: colors.card, borderRadius: radius.lg,
-    padding: spacing.xl, alignItems: 'center', width: '100%', gap: spacing.sm,
-  },
-  pointsCompanionRing: {
-    width: 72, height: 72, borderRadius: 36, borderWidth: 2,
-    overflow: 'hidden', marginBottom: spacing.sm,
-  },
-  pointsCompanionImg: { width: '100%', height: '100%' },
-  pointsBadge: { fontSize: 32, fontWeight: '800' },
-  pointsTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
-  pointsSubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
-  pointsContinueBtn: {
-    marginTop: spacing.md, backgroundColor: colors.text,
-    borderRadius: radius.md, paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xl, alignItems: 'center',
-  },
-  pointsContinueBtnText: { color: colors.background, fontSize: 15, fontWeight: '700' },
 });
 
 export default JournalDetailScreen;

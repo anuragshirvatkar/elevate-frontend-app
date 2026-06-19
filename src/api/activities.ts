@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ActivityResponse, LogActivityDto, ActivityLogEntry } from '../types';
+import type { ActivityResponse, LogActivityDto, LogActivityResponse, ActivityLogEntry } from '../types';
 
 export const activitiesApi = {
   createCustom: (name: string, section: 'power' | 'craft') =>
@@ -9,7 +9,7 @@ export const activitiesApi = {
     apiClient.get<ActivityResponse[]>('/activities/custom'),
 
   logActivity: (dto: LogActivityDto) =>
-    apiClient.put<{ success: boolean; message: string; activityLogId: string }>('/activities/log', dto),
+    apiClient.put<LogActivityResponse>('/activities/log', dto),
 
   getLog: (date: string) =>
     apiClient.get<ActivityLogEntry[]>('/activities/log', { params: { date } }),

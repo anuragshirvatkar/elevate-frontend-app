@@ -25,6 +25,11 @@ import { playPopUpSound } from '../../utils/playSound';
 import { getActivityDisplayName } from '../../utils/activityDisplayName';
 import { InAppNotificationBanner } from '../common/InAppNotification';
 import { useInAppNotification } from '../../context/InAppNotificationContext';
+import {
+  CompanionPointsPopup,
+  COMPANION_GAIN_MSGS,
+  COMPANION_LOSS_MSGS,
+} from '../common/CompanionPointsPopup';
 
 const getCompanionColor = (name: string): string => {
   const colorMap: Record<string, string> = {
@@ -414,6 +419,28 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     }
   };
 
+type SectionSubmitResult = { points: number; didSubmit: boolean };
+
+  const resolveSectionPoints = async (
+    dateStr: string,
+    section: Step,
+    delta: number,
+    didSubmit: boolean,
+  ): Promise<number> => {
+    if (delta !== 0 || !didSubmit || section === 'done') return delta;
+    try {
+      const res = await activitiesApi.getLog(dateStr);
+      const sectionTotal = (res.data ?? [])
+        .filter((log) => log.section === section)
+        .reduce((sum, log) => sum + (log.points ?? 0), 0);
+      return sectionTotal !== 0 ? sectionTotal : delta;
+    } catch {
+      return delta;
+    }
+  };
+
+  const purityRelapseCount = () => parseInt(logState.purity.relapseCount || '0', 10);
+
   const goNext = async () => {
     const idx = STEP_ORDER.indexOf(step);
     let nextStep = STEP_ORDER[idx + 1];
@@ -429,26 +456,56 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
     setLoading(true);
     let points = 0;
-    if (step === 'power') points = await submitPower(dateStr);
-    if (step === 'craft') points = await submitCraft(dateStr);
-    if (step === 'purity') points = await submitPurity(dateStr);
-    if (step === 'mind') points = await submitMind(dateStr);
+    let didSubmit = false;
+    if (step === 'power') {
+      const result = await submitPower(dateStr);
+      points = result.points;
+      didSubmit = result.didSubmit;
+    }
+    if (step === 'craft') {
+      const result = await submitCraft(dateStr);
+      points = result.points;
+      didSubmit = result.didSubmit;
+    }
+    if (step === 'purity') {
+      const result = await submitPurity(dateStr);
+      points = result.points;
+      didSubmit = result.didSubmit;
+    }
+    if (step === 'mind') {
+      const result = await submitMind(dateStr);
+      points = result.points;
+      didSubmit = result.didSubmit;
+    }
+    points = await resolveSectionPoints(dateStr, step, points, didSubmit);
+    const relapses = purityRelapseCount();
+    if (step === 'purity' && relapses > 0 && points === 0 && didSubmit) {
+      points = -20 * relapses;
+    }
     setLoading(false);
     setHasActivePhase(false);
     setCompletedSections((prev) => new Set([...prev, step]));
 
-    if (points !== 0) {
+    const showCompanionPopup =
+      points !== 0
+      || (didSubmit && isSectionPositive(step))
+      || (didSubmit && step === 'purity' && relapses > 0);
+
+    if (showCompanionPopup) {
       if (points > 0) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (points < 0) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       }
-      const pool = points > 0 ? GAIN_MSGS : LOSS_MSGS;
+      const isGain = points >= 0;
+      const pool = isGain ? COMPANION_GAIN_MSGS : COMPANION_LOSS_MSGS;
       const available = pool.map((_, i) => i).filter((i) => !usedMsgIndices.current.includes(i));
       const pickFrom = available.length > 0 ? available : pool.map((_, i) => i);
       if (available.length === 0) usedMsgIndices.current = [];
       const msgIdx = pickFrom[Math.floor(Math.random() * pickFrom.length)];
       usedMsgIndices.current.push(msgIdx);
       setPointsPopup({ points, nextStep, msgIdx });
-      if (points > 0) playPopUpSound();
+      if (points > 0 || (points === 0 && isGain)) playPopUpSound();
     } else if (nextStep === 'done') {
       onComplete(selectedDate);
     } else {
@@ -456,8 +513,9 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     }
   };
 
-  const submitPower = async (dateStr: string): Promise<number> => {
+  const submitPower = async (dateStr: string): Promise<SectionSubmitResult> => {
     let totalPoints = 0;
+    let didSubmit = false;
     const orderedIds = [
       ...powerActivities.map((a) => a.activityId),
       ...Object.keys(logState.power),
@@ -485,15 +543,16 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
-        const pts = (res.data as { points?: number }).points ?? 0;
-        totalPoints += pts;
+        didSubmit = true;
+        totalPoints += res.data.points ?? 0;
       } catch {}
     }
-    return totalPoints;
+    return { points: totalPoints, didSubmit };
   };
 
-  const submitCraft = async (dateStr: string): Promise<number> => {
+  const submitCraft = async (dateStr: string): Promise<SectionSubmitResult> => {
     let totalPoints = 0;
+    let didSubmit = false;
     const orderedIds = [
       ...craftActivities.map((a) => a.activityId),
       ...Object.keys(logState.craft),
@@ -520,14 +579,14 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
-        const pts = (res.data as { points?: number }).points ?? 0;
-        totalPoints += pts;
+        didSubmit = true;
+        totalPoints += res.data.points ?? 0;
       } catch {}
     }
-    return totalPoints;
+    return { points: totalPoints, didSubmit };
   };
 
-  const submitPurity = async (dateStr: string): Promise<number> => {
+  const submitPurity = async (dateStr: string): Promise<SectionSubmitResult> => {
     try {
       const res = await activitiesApi.logActivity({
         section: 'purity',
@@ -535,12 +594,15 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         reasonIfNo: logState.purity.reasonIfNo || undefined,
         date: dateStr,
       });
-      return (res.data as { points?: number }).points ?? 0;
-    } catch { return 0; }
+      return { points: res.data.points ?? 0, didSubmit: true };
+    } catch {
+      return { points: 0, didSubmit: false };
+    }
   };
 
-  const submitMind = async (dateStr: string): Promise<number> => {
+  const submitMind = async (dateStr: string): Promise<SectionSubmitResult> => {
     let totalPoints = 0;
+    let didSubmit = false;
     for (const [bookId, data] of Object.entries(logState.mind)) {
       const book = mindBooks?.find((b) => b.userBookId === bookId);
       if (!book) continue;
@@ -555,11 +617,11 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
-        const pts = (res.data as { points?: number }).points ?? 0;
-        totalPoints += pts;
+        didSubmit = true;
+        totalPoints += res.data.points ?? 0;
       } catch {}
     }
-    return totalPoints;
+    return { points: totalPoints, didSubmit };
   };
 
   const isSectionPositive = (sec: string): boolean => {
@@ -763,23 +825,30 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
             />
           )}
 
-          {pointsPopup && (
-            <PointsPopup
-              points={pointsPopup.points}
-              msgIdx={pointsPopup.msgIdx}
-              companion={companion}
-              onContinue={() => {
-                const next = pointsPopup.nextStep;
-                setPointsPopup(null);
-                if (next === 'done') {
-                  onComplete(selectedDate);
-                } else {
-                  setStep(next);
-                }
-              }}
-            />
-          )}
         </KeyboardAvoidingView>
+
+        {pointsPopup && (
+          <CompanionPointsPopup
+            visible
+            presentation="overlay"
+            points={pointsPopup.points}
+            companion={companion}
+            subtitle={
+              (pointsPopup.points >= 0 ? COMPANION_GAIN_MSGS : COMPANION_LOSS_MSGS)[pointsPopup.msgIdx](
+                companion?.name ?? 'Your companion',
+              )
+            }
+            onContinue={() => {
+              const next = pointsPopup.nextStep;
+              setPointsPopup(null);
+              if (next === 'done') {
+                onComplete(selectedDate);
+              } else {
+                setStep(next);
+              }
+            }}
+          />
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -2198,55 +2267,6 @@ const MindStep: React.FC<{
   );
 };
 
-const GAIN_MSGS = [
-  (n: string) => `${n} is impressed. Keep the streak alive.`,
-  (n: string) => `${n} sees your dedication. Don't stop now.`,
-  (n: string) => `${n} nods in approval. You're building real momentum.`,
-  (n: string) => `${n} smiles. This is what greatness looks like.`,
-  (n: string) => `${n} is watching. You're making them proud.`,
-];
-const LOSS_MSGS = [
-  (n: string) => `${n} believes you can bounce back. Stay strong.`,
-  (n: string) => `${n} hasn't given up on you. Get back up.`,
-  (n: string) => `${n} says: every warrior falls. Rise again.`,
-  (n: string) => `${n} reminds you — one slip doesn't define you.`,
-];
-
-const PointsPopup: React.FC<{
-  points: number;
-  msgIdx: number;
-  companion: CompanionDto | null;
-  onContinue: () => void;
-}> = ({ points, msgIdx, companion, onContinue }) => {
-  const isGain = points > 0;
-  const name = companion?.name ?? 'Your companion';
-  const badgeColor = isGain ? colors.success : colors.error;
-  const title = isGain ? 'Points earned!' : 'Points lost';
-  const subtitle = isGain ? GAIN_MSGS[msgIdx](name) : LOSS_MSGS[msgIdx](name);
-  return (
-    <View style={styles.pointsOverlay}>
-      <View style={styles.pointsCard}>
-        <View style={[
-          styles.pointsCompanionRing,
-          { borderColor: getCompanionColor(companion?.name || '') + '99' },
-        ]}>
-          {companion?.image && (
-            <Image source={{ uri: companion.image }} style={styles.pointsCompanionImg} resizeMode="cover" />
-          )}
-        </View>
-        <Text style={[styles.pointsBadge, { color: badgeColor }]}>
-          {isGain ? '+' : ''}{points} pts
-        </Text>
-        <Text style={styles.pointsTitle}>{title}</Text>
-        <Text style={styles.pointsSubtitle}>{subtitle}</Text>
-        <TouchableOpacity style={styles.pointsContinueBtn} onPress={onContinue} activeOpacity={0.85}>
-          <Text style={styles.pointsContinueBtnText}>Continue</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
@@ -2610,67 +2630,6 @@ const styles = StyleSheet.create({
   helpDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: spacing.lg },
   helpDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
   helpDotActive: { backgroundColor: colors.text, width: 18 },
-
-  // Points popup
-  pointsOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 99,
-  },
-  pointsCard: {
-    width: '80%',
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-  },
-  pointsCompanionRing: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    borderWidth: 2,
-    overflow: 'hidden',
-    marginBottom: spacing.xs,
-  },
-  pointsCompanionImg: {
-    width: '100%',
-    height: '100%',
-  },
-  pointsBadge: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -1,
-  },
-  pointsTitle: {
-    ...typography.h4,
-    color: colors.text,
-  },
-  pointsSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  pointsContinueBtn: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.text,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xl,
-  },
-  pointsContinueBtnText: {
-    ...typography.button,
-    color: colors.background,
-    fontSize: 15,
-  },
 
   // Tweet Summary
   tweet: {
