@@ -54,32 +54,56 @@ const getMonthLabel = (monthValue: string, availableMonths: { value: string; lab
 const isCountableDay = (day: MonthlyDayEntry | undefined) =>
   day?.didUserDo === true || day?.didUserDo === false;
 
-const getDotStyle = (
+type DotStatus = 'green' | 'red' | 'grey';
+
+const getDotStatus = (
   entry: MonthlyDayEntry | undefined,
   section: ActivitySection,
   rangeDay?: MonthlyDayEntry,
-) => {
-  const grey = { backgroundColor: '#1a1a1a' as const, borderColor: '#333' as const };
-  const red = { backgroundColor: '#FF4444' as const, borderColor: '#FF4444' as const };
-  const green = { backgroundColor: colors.success, borderColor: colors.success };
-
+): DotStatus => {
   if (section === 'purity') {
-    if (!entry) return grey;
-    if (entry.didUserRelapse === false) return green;
-    if (entry.didUserRelapse === true) return red;
-    return grey;
+    if (!entry) return 'grey';
+    if (entry.didUserRelapse === false) return 'green';
+    if (entry.didUserRelapse === true) return 'red';
+    return 'grey';
   }
 
   if (section === 'mind') {
-    if (!isCountableDay(rangeDay)) return grey;
-    if (entry?.didUserDo === true) return green;
-    return red;
+    if (!isCountableDay(rangeDay)) return 'grey';
+    if (entry?.didUserDo === true) return 'green';
+    return 'red';
   }
 
-  if (!entry) return grey;
-  if (entry.didUserDo === true) return green;
-  if (entry.didUserDo === false) return red;
-  return grey;
+  if (!entry) return 'grey';
+  if (entry.didUserDo === true) return 'green';
+  if (entry.didUserDo === false) return 'red';
+  return 'grey';
+};
+
+const dotStyleFromStatus = (status: DotStatus) => {
+  if (status === 'green') return { backgroundColor: colors.success, borderColor: colors.success };
+  if (status === 'red') return { backgroundColor: '#FF4444' as const, borderColor: '#FF4444' as const };
+  return { backgroundColor: '#1a1a1a' as const, borderColor: '#333' as const };
+};
+
+const countSectionDots = (
+  monthDays: MonthlyDayEntry[],
+  section: ActivitySection,
+  monthlyData: MonthlyActivityResponse,
+) => {
+  const entries = getMonthlySectionEntries(monthlyData, section);
+  let green = 0;
+  let red = 0;
+  for (const day of monthDays) {
+    const entry = entries.find((e) => e.date === day.date);
+    const rangeDay = section === 'mind'
+      ? monthlyData.power.find((e) => e.date === day.date)
+      : undefined;
+    const status = getDotStatus(entry, section, rangeDay);
+    if (status === 'green') green += 1;
+    else if (status === 'red') red += 1;
+  }
+  return { green, red };
 };
 
 // ── Donut chart ──────────────────────────────────────────────────────────────
@@ -160,6 +184,20 @@ const chunkMonthDays = (days: MonthlyDayEntry[], size = 15): MonthlyDayEntry[][]
   return [days.slice(0, size), days.slice(size)].filter((chunk) => chunk.length > 0);
 };
 
+const PillarIcon = ({ section }: { section: ActivitySection }) => {
+  const Icon = SECTION_ICONS[section];
+  return (
+    <Icon
+      width={section === 'power' ? 16 : 14}
+      height={section === 'power' ? 16 : 14}
+      fill="#FFFFFF"
+      stroke="#FFFFFF"
+      color="#FFFFFF"
+      strokeWidth={section === 'power' ? 2.2 : 1.4}
+    />
+  );
+};
+
 const MonthlyHalfGrid = ({
   days,
   sections,
@@ -181,31 +219,49 @@ const MonthlyHalfGrid = ({
 
     {sections.map((section) => {
       const entries = getMonthlySectionEntries(monthlyData, section);
-      const Icon = SECTION_ICONS[section];
       return (
         <View key={section} style={s.halfRow}>
           <View style={s.pillarIconCol}>
-            <Icon
-              width={section === 'power' ? 16 : 14}
-              height={section === 'power' ? 16 : 14}
-              fill="#FFFFFF"
-              stroke="#FFFFFF"
-              color="#FFFFFF"
-              strokeWidth={section === 'power' ? 2.2 : 1.4}
-            />
+            <PillarIcon section={section} />
           </View>
           {days.map((day) => {
             const entry = entries.find((e) => e.date === day.date);
             const rangeDay = section === 'mind'
               ? monthlyData.power.find((e) => e.date === day.date)
               : undefined;
-            const dotColors = getDotStyle(entry, section, rangeDay);
+            const dotColors = dotStyleFromStatus(getDotStatus(entry, section, rangeDay));
             return (
               <View key={`${day.date}-${section}`} style={s.halfDayCol}>
                 <View style={[s.pillarDot, dotColors]} />
               </View>
             );
           })}
+        </View>
+      );
+    })}
+  </View>
+);
+
+const MonthlySectionTotals = ({
+  monthDays,
+  sections,
+  monthlyData,
+}: {
+  monthDays: MonthlyDayEntry[];
+  sections: ActivitySection[];
+  monthlyData: MonthlyActivityResponse;
+}) => (
+  <View style={s.sectionTotalsRow}>
+    {sections.map((section) => {
+      const { green, red } = countSectionDots(monthDays, section, monthlyData);
+      return (
+        <View key={section} style={s.sectionTotalItem}>
+          <View style={s.sectionCountBox}>
+            <PillarIcon section={section} />
+            <Text style={s.sectionCountGreen}>{green}</Text>
+            <Text style={s.sectionCountSep}>|</Text>
+            <Text style={s.sectionCountRed}>{red}</Text>
+          </View>
         </View>
       );
     })}
@@ -230,6 +286,7 @@ const MonthlyPillarGrid = ({
           <MonthlyHalfGrid days={days} sections={sections} monthlyData={monthlyData} />
         </View>
       ))}
+      <MonthlySectionTotals monthDays={monthDays} sections={sections} monthlyData={monthlyData} />
     </View>
   );
 };
@@ -725,6 +782,19 @@ const s = StyleSheet.create({
   halfDayCol: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 16 },
   halfDayNum: { fontSize: 8, fontWeight: '600', color: '#555', marginBottom: 3 },
   pillarDot: { width: 7, height: 7, borderRadius: 4, borderWidth: 1 },
+  sectionTotalsRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+    marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a',
+  },
+  sectionTotalItem: { alignItems: 'center' },
+  sectionCountBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 8, paddingVertical: 5,
+    borderRadius: 8, borderWidth: 1, borderColor: '#2a2a2a', backgroundColor: '#0c0c0c',
+  },
+  sectionCountSep: { fontSize: 12, color: '#555', fontWeight: '500' },
+  sectionCountGreen: { fontSize: 13, fontWeight: '700', color: colors.success },
+  sectionCountRed: { fontSize: 13, fontWeight: '700', color: '#FF4444' },
   monthPickerList: { maxHeight: 320 },
   monthPickerItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

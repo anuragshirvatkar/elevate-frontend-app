@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform,
@@ -112,6 +112,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [powerLogNames, setPowerLogNames] = useState<Record<string, string>>({});
   const [craftLogNames, setCraftLogNames] = useState<Record<string, string>>({});
   const [mindBooks, setMindBooks] = useState<MindSetup['books']>([]);
+  const [mindReadonlyBooks, setMindReadonlyBooks] = useState<Array<{ userBookId: string; title: string; author?: string }>>([]);
+  const allMindBooksRef = useRef<MindSetup['books']>([]);
   const [mindActive, setMindActive] = useState(true);
   const { profile } = useUser();
   const minDate = profile?.joinedAt ? new Date(profile.joinedAt) : undefined;
@@ -164,6 +166,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       setPrefillLocked(false);
       setPowerLogNames({});
       setCraftLogNames({});
+      setMindReadonlyBooks([]);
       setLogState({
         power: {},
         craft: {},
@@ -207,7 +210,9 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         const mindData = mind.value.data;
         isMindActive = mindData.isActive;
         setMindActive(isMindActive);
-        setMindBooks(mindData.books || []);
+        const allBooks = mindData.books || [];
+        allMindBooksRef.current = allBooks;
+        setMindBooks(allBooks.filter((b) => !b.isCompleted));
       }
       if (progress.status === 'fulfilled') setCompanion(progress.value.data.selectedCompanion || null);
     } catch {}
@@ -264,6 +269,23 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         }
       }
 
+      const activeBookIds = new Set(
+        allMindBooksRef.current.filter((b) => !b.isCompleted).map((b) => b.userBookId),
+      );
+      setMindReadonlyBooks(
+        Object.keys(newMind)
+          .filter((id) => !activeBookIds.has(id))
+          .map((id) => {
+            const log = logs.find((l) => l.section === 'mind' && l.userBookId === id);
+            const fromSetup = allMindBooksRef.current.find((b) => b.userBookId === id);
+            return {
+              userBookId: id,
+              title: log?.bookTitle || fromSetup?.title || 'Book',
+              author: fromSetup?.author,
+            };
+          }),
+      );
+
       setLogState({
         power: newPower,
         craft: newCraft,
@@ -304,6 +326,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
       setPrefillLocked(true);
       setStep(isMindActive ? 'mind' : (isFemale ? 'craft' : 'purity'));
     } catch {
+      setMindReadonlyBooks([]);
       setLogState({
         power: {},
         craft: {},
@@ -635,6 +658,10 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
   const mindNotesValid = Object.values(logState.mind).every(
     (d) => !d.didUserDo || !!d.description?.trim(),
   );
+  const mindDayLogged = Object.keys(logState.mind).some((bookId) => {
+    const entry = logState.mind[bookId];
+    return !!entry && (!entry.didUserDo || !!entry.description?.trim());
+  });
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
@@ -770,11 +797,15 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
                 <MindStep
                   key={format(selectedDate, 'yyyy-MM-dd')}
                   books={mindBooks || []}
+                  readonlyBooks={mindReadonlyBooks}
                   logState={logState.mind}
                   onUpdate={updateMind}
                   onUpdateImages={updateMindImages}
                   companion={companion}
                   onAddBooks={() => { onClose(); onNavigateToMind?.(); }}
+                  onBookMarkedComplete={(bookId) => {
+                    setMindBooks((prev) => prev?.filter((b) => b.userBookId !== bookId) ?? []);
+                  }}
                   onActivePhaseChange={setHasActivePhase}
                   onPendingChange={setHasPendingInput}
                 />
@@ -785,9 +816,9 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
           {!hasActivePhase && !(step === 'purity' && !mindActive && !purityComplete) && (
             <View style={styles.footer}>
               <TouchableOpacity
-                style={[styles.nextBtn, ((step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && (!mindHasChanges && (mindBooks?.length ?? 0) > 0 || !mindNotesValid))) && styles.nextBtnDisabled]}
+                style={[styles.nextBtn, ((step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && ((!mindDayLogged && !mindHasChanges && (mindBooks?.length ?? 0) > 0) || !mindNotesValid))) && styles.nextBtnDisabled]}
                 onPress={goNext}
-                disabled={loading || (step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && (!mindHasChanges && (mindBooks?.length ?? 0) > 0 || !mindNotesValid))}
+                disabled={loading || (step === 'purity' && !purityComplete) || prefillLocked || hasPendingInput || (step === 'mind' && ((!mindDayLogged && !mindHasChanges && (mindBooks?.length ?? 0) > 0) || !mindNotesValid))}
                 activeOpacity={0.85}
               >
                 {loading ? (
@@ -818,6 +849,7 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
                     purity: { relapseCount: '0', reasonIfNo: '' },
                     mind: {},
                     });
+                  setMindReadonlyBooks([]);
                   setStep('power');
                   fetchAndPrepopulate(date);
                 }
@@ -1946,22 +1978,25 @@ const PurityStep: React.FC<{
 
 const MindStep: React.FC<{
   books: Array<{ userBookId: string; title: string; author?: string }>;
+  readonlyBooks?: Array<{ userBookId: string; title: string; author?: string }>;
   logState: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }>;
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
   companion: CompanionDto | null;
   onAddBooks?: () => void;
+  onBookMarkedComplete?: (bookId: string) => void;
   onActivePhaseChange?: (active: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
-}> = ({ books, logState, onUpdate, onUpdateImages, companion, onAddBooks, onActivePhaseChange, onPendingChange }) => {
-  const alreadyLoggedIds = books
-    .filter((b) => {
-      const entry = logState[b.userBookId];
-      return entry && (!entry.didUserDo || !!entry.description?.trim());
-    })
-    .map((b) => b.userBookId);
+}> = ({ books, readonlyBooks = [], logState, onUpdate, onUpdateImages, companion, onAddBooks, onBookMarkedComplete, onActivePhaseChange, onPendingChange }) => {
+  const isBookLogComplete = (bookId: string) => {
+    const entry = logState[bookId];
+    return !!entry && (!entry.didUserDo || !!entry.description?.trim());
+  };
+  const alreadyLoggedIds = Object.keys(logState).filter((id) => isBookLogComplete(id));
   const [selectedId, setSelectedId] = useState<string | null>(() =>
-    books.find((b) => !(b.userBookId in logState))?.userBookId ?? null
+    alreadyLoggedIds.length > 0
+      ? null
+      : books.find((b) => !(b.userBookId in logState))?.userBookId ?? books[0]?.userBookId ?? null,
   );
   const [showDropdown, setShowDropdown] = useState(false);
   const [confirmedIds, setConfirmedIds] = useState<string[]>(alreadyLoggedIds);
@@ -1986,8 +2021,12 @@ const MindStep: React.FC<{
   const activeId = notesBookId ?? imagesBookId;
   const tweetIds = activeId ? [...confirmedIds, activeId] : confirmedIds;
   const unanswered = books.filter((b) => !tweetIds.includes(b.userBookId) && b.userBookId !== reasonBookId);
-  // Only show yes/no for explicitly selected book — never auto-advance to the next one
-  const currentForYesNo = (activeId || reasonBookId) ? null : books.find((b) => b.userBookId === selectedId) ?? null;
+  const hasAnyLogForDay = alreadyLoggedIds.length > 0;
+  // One book per day — only prompt when no book has been logged yet for this day
+  const canPromptNewBook = !hasAnyLogForDay && !activeId && !reasonBookId;
+  const currentForYesNo = canPromptNewBook
+    ? books.find((b) => b.userBookId === selectedId) ?? null
+    : null;
   const notesBook = notesBookId ? books.find((b) => b.userBookId === notesBookId) : null;
   const imagesBook = imagesBookId ? books.find((b) => b.userBookId === imagesBookId) : null;
 
@@ -2017,6 +2056,7 @@ const MindStep: React.FC<{
 
   const handleMarkComplete = async (bookId: string) => {
     try { await setupApi.putMind({ books: [{ userBookId: bookId, isCompleted: true }] }); } catch {}
+    onBookMarkedComplete?.(bookId);
     handleYesNo(true);
   };
 
@@ -2083,7 +2123,21 @@ const MindStep: React.FC<{
 
   return (
     <View style={styles.stepContent}>
-      {books.length === 0 && (
+      {readonlyBooks.map((book) => {
+        const s = logState[book.userBookId];
+        if (!s || !isBookLogComplete(book.userBookId)) return null;
+        const status = s.didUserDo ? 'Read ✓' : `Skipped${s.reasonIfNo ? ` · ${s.reasonIfNo}` : ''}`;
+        return (
+          <React.Fragment key={`readonly-${book.userBookId}`}>
+            <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} />
+            {!!s.didUserDo && (
+              <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s.description || '—'} />
+            )}
+          </React.Fragment>
+        );
+      })}
+
+      {books.length === 0 && readonlyBooks.length === 0 && (
         <View style={styles.emptyStateRow}>
           <Text style={styles.emptyState}>No books in your reading list.</Text>
           <TouchableOpacity onPress={onAddBooks} activeOpacity={0.7}>
@@ -2092,7 +2146,7 @@ const MindStep: React.FC<{
         </View>
       )}
 
-      {tweetIds.map((id) => {
+      {tweetIds.filter((id) => books.some((b) => b.userBookId === id)).map((id) => {
         const book = books.find((b) => b.userBookId === id);
         if (!book) return null;
         const s = logState[id];

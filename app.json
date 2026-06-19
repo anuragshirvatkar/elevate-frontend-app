@@ -2,7 +2,7 @@
   "expo": {
     "name": "Elevate",
     "slug": "elevate-frontend",
-    "version": "1.0.41",
+    "version": "1.0.42",
     "orientation": "portrait",
     "icon": "./assets/elevate-logo.png",
     "userInterfaceStyle": "dark",
@@ -24,7 +24,7 @@
         "android.permission.RECORD_AUDIO"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 41
+      "versionCode": 42
     },
     "web": {
       "favicon": "./assets/elevate-logo.png"
@@ -51,7 +51,10 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#000000"
+          "backgroundColor": "#000000",
+          "android": {
+            "backgroundColor": "#000000"
+          }
         }
       ],
       [

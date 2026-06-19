@@ -58,8 +58,10 @@ function AppContent() {
   usePushNotifications(isAuthenticated);
 
   useLayoutEffect(() => {
-    ExpoSplashScreen.hideAsync().catch(() => {});
-  }, []);
+    if (!isConnected) {
+      ExpoSplashScreen.hideAsync().catch(() => {});
+    }
+  }, [isConnected]);
 
   const getNavigationAction = (type: string) => {
     switch (type) {

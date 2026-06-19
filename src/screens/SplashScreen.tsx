@@ -34,7 +34,6 @@ const SplashScreen = ({ onDone }: SplashScreenProps) => {
       <Animated.View style={[styles.brandBlock, { transform: [{ scale }] }]}>
         <Image source={LOGO_IMAGE} style={styles.logo} resizeMode="contain" />
         <Text style={styles.wordmark}>ELEVATE</Text>
-        <Text style={styles.tagline}>Rise. Every. Day.</Text>
       </Animated.View>
     </View>
   );

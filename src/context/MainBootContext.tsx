@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { colors } from '../theme';
 
 type MainBootContextValue = {
   setHomeReady: () => void;
@@ -25,7 +26,11 @@ export const MainBootProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         >
           {children}
         </View>
-        {!ready && <View style={styles.overlay} />}
+        {!ready && (
+          <View style={styles.overlay}>
+            <ActivityIndicator color={colors.text} size="large" />
+          </View>
+        )}
       </View>
     </MainBootContext.Provider>
   );
@@ -44,5 +49,7 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
