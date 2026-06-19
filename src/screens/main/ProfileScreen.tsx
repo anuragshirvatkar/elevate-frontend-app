@@ -36,29 +36,13 @@ import { useUser } from '../../context/UserContext';
 import { profileApi } from '../../api';
 import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
-import type { AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
+import type { Avatar, AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
 import { sortAvatars } from '../../utils/avatars';
-import { buildWeeklyProgressRows } from '../../utils/avatarProgress';
+import { AvatarWeeklyProgressBars } from '../../components/avatars/AvatarWeeklyProgressBars';
 
 const renderCompactProgress = (progress: AvatarProgress) => {
   if (progress.type === 'weekly') {
-    const { requiredDaysPerWeek } = progress as WeeklyAvatarProgress;
-    const displayRows = buildWeeklyProgressRows(progress as WeeklyAvatarProgress);
-
-    return (
-      <View style={{ marginTop: 5, flexDirection: 'row', gap: 6 }}>
-        {displayRows.map((w, ri) => (
-          <View key={ri} style={{ flex: 1, flexDirection: 'row', gap: 2 }}>
-            {Array.from({ length: requiredDaysPerWeek }).map((_, i) => (
-              <View
-                key={i}
-                style={{ flex: 1, height: 3, borderRadius: 1.5, backgroundColor: i < w.days ? '#fff' : '#1e1e1e' }}
-              />
-            ))}
-          </View>
-        ))}
-      </View>
-    );
+    return <AvatarWeeklyProgressBars progress={progress as WeeklyAvatarProgress} compact />;
   }
   if (progress.type === 'purity') {
     const { relapsesThisMonth, maxRelapsesAllowed, loggedDays, requiredLoggedDays } = progress as PurityAvatarProgress;
@@ -108,6 +92,7 @@ const ProfileScreen = () => {
   const { showAlert } = useAlert();
   const [refreshing, setRefreshing] = useState(false);
   const [storyModal, setStoryModal] = useState<{ name: string; story: string; fullBodyImageUrl?: string; profileImageUrl?: string } | null>(null);
+  const [selectingAvatarId, setSelectingAvatarId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const handleDeleteAccount = () => {
@@ -145,6 +130,30 @@ const ProfileScreen = () => {
     setRefreshing(true);
     await fetchProfile();
     setRefreshing(false);
+  };
+
+  const openStoryModal = (av: Pick<Avatar, 'name' | 'story' | 'fullBodyImageUrl' | 'profileImageUrl'>) => {
+    if (!av.story) return;
+    setStoryModal({
+      name: av.name,
+      story: av.story,
+      fullBodyImageUrl: av.fullBodyImageUrl,
+      profileImageUrl: av.profileImageUrl,
+    });
+  };
+
+  const handleAvatarSelect = async (av: Avatar) => {
+    if (!av.isUnlocked || av.isSelected) return;
+
+    setSelectingAvatarId(av.id);
+    try {
+      await profileApi.edit({ avatarId: av.id });
+      await fetchProfile();
+    } catch (e: any) {
+      showAlert('Error', e?.response?.data?.message || 'Failed to select avatar.');
+    } finally {
+      setSelectingAvatarId(null);
+    }
   };
 
   if (isLoadingProfile && !profile) {
@@ -268,7 +277,7 @@ const ProfileScreen = () => {
                     <>
                       <Text style={styles.avatarStory} numberOfLines={4}>{selectedAvatar.story}</Text>
                       <TouchableOpacity
-                        onPress={() => setStoryModal({ name: selectedAvatar.name, story: selectedAvatar.story!, fullBodyImageUrl: selectedAvatar.fullBodyImageUrl, profileImageUrl: selectedAvatar.profileImageUrl })}
+                        onPress={() => openStoryModal(selectedAvatar)}
                         activeOpacity={0.7}
                         style={styles.viewMoreBtn}
                       >
@@ -292,53 +301,76 @@ const ProfileScreen = () => {
               {visibleAvatars.map((av) => {
                 const isLocked = !av.isUnlocked;
                 const isSelected = av.isSelected;
+                const isSelecting = selectingAvatarId === av.id;
                 const unlockText = isLocked && av.unlockRequirement
                   ? formatUnlockReq(av.name, av.unlockRequirement)
                   : null;
                 return (
-                  <TouchableOpacity
+                  <View
                     key={av.id}
                     style={[styles.avCarouselCard, isSelected && styles.avCarouselCardSelected, { width: AVATAR_CARD_W }]}
-                    activeOpacity={0.75}
-                    onPress={() => navigation.navigate('EditProfile', { scrollToSection: 'avatar', avatarId: av.id })}
                   >
-                    <View style={[styles.avCarouselImgWrap, { width: AVATAR_CARD_W }]}>
-                      {av.fullBodyImageUrl ? (
-                        <Image
-                          source={{ uri: av.fullBodyImageUrl }}
-                          style={[styles.avCarouselImg, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={[styles.avCarouselImgPlaceholder, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}>
-                          <Ionicons name="person" size={36} color={isLocked ? '#333' : '#555'} />
-                        </View>
-                      )}
-                      {unlockText ? (
-                        <View style={styles.avUnlockCapsule}>
-                          <Ionicons name="lock-closed" size={8} color="#ccc" />
-                          <Text style={styles.avUnlockCapsuleText} numberOfLines={2}>{unlockText}</Text>
-                        </View>
-                      ) : null}
-                      {isLocked && (
-                        <View style={styles.avLockOverlay}>
-                          <Ionicons name="lock-closed" size={22} color="#aaa" />
-                        </View>
-                      )}
-                      {isSelected && (
-                        <View style={styles.avSelectedBadge}>
-                          <Ionicons name="checkmark" size={12} color="#000" />
-                        </View>
-                      )}
-                    </View>
+                    <TouchableOpacity
+                      activeOpacity={isLocked ? 1 : 0.75}
+                      disabled={isLocked || isSelecting}
+                      onPress={() => handleAvatarSelect(av)}
+                    >
+                      <View style={[styles.avCarouselImgWrap, { width: AVATAR_CARD_W }]}>
+                        {av.fullBodyImageUrl ? (
+                          <Image
+                            source={{ uri: av.fullBodyImageUrl }}
+                            style={[styles.avCarouselImg, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={[styles.avCarouselImgPlaceholder, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}>
+                            <Ionicons name="person" size={36} color={isLocked ? '#333' : '#555'} />
+                          </View>
+                        )}
+                        {isSelecting && (
+                          <View style={styles.avSelectingOverlay}>
+                            <ActivityIndicator color="#fff" />
+                          </View>
+                        )}
+                        {unlockText ? (
+                          <View style={styles.avUnlockCapsule}>
+                            <Ionicons name="lock-closed" size={8} color="#ccc" />
+                            <Text style={styles.avUnlockCapsuleText} numberOfLines={2}>{unlockText}</Text>
+                          </View>
+                        ) : null}
+                        {isLocked && (
+                          <View style={styles.avLockOverlay}>
+                            <Ionicons name="lock-closed" size={22} color="#aaa" />
+                          </View>
+                        )}
+                        {isSelected && (
+                          <View style={styles.avSelectedBadge}>
+                            <Ionicons name="checkmark" size={12} color="#000" />
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
                     <View style={styles.avCarouselInfo}>
                       <Text style={[styles.avCarouselName, isLocked && { color: '#444' }]} numberOfLines={1}>{av.name}</Text>
                       {av.title ? <Text style={styles.avCarouselTitle} numberOfLines={1}>{av.title}</Text> : null}
+                      {!isLocked && av.story ? (
+                        <>
+                          <Text style={styles.avCarouselStory} numberOfLines={2}>{av.story}</Text>
+                          <TouchableOpacity
+                            onPress={() => openStoryModal(av)}
+                            activeOpacity={0.7}
+                            style={styles.avViewBtn}
+                          >
+                            <Text style={styles.avViewText}>View</Text>
+                            <Ionicons name="chevron-forward" size={10} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        </>
+                      ) : null}
                       {isLocked && av.progress && av.progress.type !== 'default'
                         ? renderCompactProgress(av.progress)
                         : null}
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 );
               })}
             </ScrollView>
@@ -630,6 +662,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
+  avSelectingOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   avUnlockCapsule: {
     position: 'absolute', bottom: 6, left: 6, right: 6,
     flexDirection: 'row', alignItems: 'flex-start', gap: 3,
@@ -645,6 +682,9 @@ const styles = StyleSheet.create({
   avCarouselInfo: { paddingHorizontal: 8, paddingVertical: 7 },
   avCarouselName: { color: colors.text, fontSize: 13, fontWeight: '600' },
   avCarouselTitle: { color: colors.textMuted, fontSize: 10, marginTop: 1 },
+  avCarouselStory: { color: colors.textSecondary, fontSize: 10, lineHeight: 14, marginTop: 4 },
+  avViewBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 4, alignSelf: 'flex-start' },
+  avViewText: { ...typography.caption, color: colors.textMuted, fontSize: 11 },
 
   // Story modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'flex-end' },

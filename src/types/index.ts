@@ -338,6 +338,7 @@ export interface WeeklyAvatarProgress {
   currentWeekDays: number;
   totalWeeks: number;
   requiredDaysPerWeek: number;
+  allRequirementsMet?: boolean;
   weeks: WeekEntry[];
 }
 
@@ -347,6 +348,7 @@ export interface PurityAvatarProgress {
   maxRelapsesAllowed: number;
   loggedDays: number;
   requiredLoggedDays: number;
+  allRequirementsMet?: boolean;
 }
 
 export interface DefaultAvatarProgress {

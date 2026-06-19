@@ -458,7 +458,13 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
 
   const submitPower = async (dateStr: string): Promise<number> => {
     let totalPoints = 0;
-    for (const [activityId, data] of Object.entries(logState.power)) {
+    const orderedIds = [
+      ...powerActivities.map((a) => a.activityId),
+      ...Object.keys(logState.power),
+    ].filter((id, i, arr) => arr.indexOf(id) === i && logState.power[id]);
+
+    for (const activityId of orderedIds) {
+      const data = logState.power[activityId];
       let act = powerActivities.find((a) => a.activityId === activityId);
       if (!act) {
         const name = powerLogNames[activityId];
@@ -479,8 +485,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
-        const pts = (res.data as { points?: number }).points;
-        if (pts) totalPoints += pts;
+        const pts = (res.data as { points?: number }).points ?? 0;
+        totalPoints += pts;
       } catch {}
     }
     return totalPoints;
@@ -488,7 +494,13 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
 
   const submitCraft = async (dateStr: string): Promise<number> => {
     let totalPoints = 0;
-    for (const [activityId, data] of Object.entries(logState.craft)) {
+    const orderedIds = [
+      ...craftActivities.map((a) => a.activityId),
+      ...Object.keys(logState.craft),
+    ].filter((id, i, arr) => arr.indexOf(id) === i && logState.craft[id]);
+
+    for (const activityId of orderedIds) {
+      const data = logState.craft[activityId];
       let act = craftActivities.find((a) => a.activityId === activityId);
       if (!act) {
         const name = craftLogNames[activityId];
@@ -508,8 +520,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
-        const pts = (res.data as { points?: number }).points;
-        if (pts) totalPoints += pts;
+        const pts = (res.data as { points?: number }).points ?? 0;
+        totalPoints += pts;
       } catch {}
     }
     return totalPoints;
@@ -543,8 +555,8 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
           date: dateStr,
         });
-        const pts = (res.data as { points?: number }).points;
-        if (pts) totalPoints += pts;
+        const pts = (res.data as { points?: number }).points ?? 0;
+        totalPoints += pts;
       } catch {}
     }
     return totalPoints;

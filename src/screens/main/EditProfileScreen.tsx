@@ -16,7 +16,7 @@ import { colors, spacing, typography } from '../../theme';
 import type { Avatar, SocialLink, CompanionDto, AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
 import { sortCompanions } from '../../utils/companions';
 import { sortAvatars } from '../../utils/avatars';
-import { buildWeeklyProgressRows } from '../../utils/avatarProgress';
+import { AvatarWeeklyProgressBars } from '../../components/avatars/AvatarWeeklyProgressBars';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -67,24 +67,9 @@ const fmtDateDisplay = (iso?: string) => {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-const renderWeeklyProgress = (p: WeeklyAvatarProgress) => {
-  const displayRows = buildWeeklyProgressRows(p);
-
-  return (
-    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a', flexDirection: 'row', gap: 8 }}>
-      {displayRows.map((w, ri) => (
-        <View key={ri} style={{ flex: 1, flexDirection: 'row', gap: 2 }}>
-          {Array.from({ length: p.requiredDaysPerWeek }).map((_, i) => (
-            <View
-              key={i}
-              style={{ flex: 1, height: 5, borderRadius: 2.5, backgroundColor: i < w.days ? '#fff' : '#1a1a1a' }}
-            />
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-};
+const renderWeeklyProgress = (p: WeeklyAvatarProgress) => (
+  <AvatarWeeklyProgressBars progress={p} />
+);
 
 const renderPurityProgress = (p: PurityAvatarProgress) => {
   const livesRemaining = Math.max(0, p.maxRelapsesAllowed - p.relapsesThisMonth);

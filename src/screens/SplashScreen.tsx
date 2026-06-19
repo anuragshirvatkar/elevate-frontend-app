@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { View, Text, Image, Animated, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import * as ExpoSplashScreen from 'expo-splash-screen';
@@ -8,39 +8,34 @@ interface SplashScreenProps {
   onDone: () => void;
 }
 
+const LOGO_IMAGE = require('../../assets/elevate-logo.png');
+
 const SplashScreen = ({ onDone }: SplashScreenProps) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0.85)).current;
-  const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.94)).current;
+
+  useLayoutEffect(() => {
+    ExpoSplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 1100, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}), 150);
-        Animated.timing(taglineOpacity, { toValue: 1, duration: 800, useNativeDriver: true }).start();
-      }
-      ExpoSplashScreen.hideAsync().catch(() => {});
-      onDone();
-    });
+    Animated.spring(scale, { toValue: 1, tension: 60, friction: 9, useNativeDriver: true }).start(
+      ({ finished }) => {
+        if (finished) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+          setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}), 150);
+        }
+        setTimeout(onDone, finished ? 500 : 0);
+      },
+    );
   }, []);
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.content, { opacity, transform: [{ scale }] }]}>
-        <Image
-          source={require('../../assets/elevate-logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+      <Animated.View style={[styles.brandBlock, { transform: [{ scale }] }]}>
+        <Image source={LOGO_IMAGE} style={styles.logo} resizeMode="contain" />
         <Text style={styles.wordmark}>ELEVATE</Text>
+        <Text style={styles.tagline}>Rise. Every. Day.</Text>
       </Animated.View>
-      <Animated.Text style={[styles.tagline, { opacity: taglineOpacity }]}>
-        Rise. Every. Day.
-      </Animated.Text>
     </View>
   );
 };
@@ -51,12 +46,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 24,
   },
-  content: { alignItems: 'center', gap: 16 },
+  brandBlock: {
+    alignItems: 'center',
+    gap: 14,
+  },
   logo: {
-    width: 100,
-    height: 100,
+    width: 88,
+    height: 88,
   },
   wordmark: {
     fontSize: 28,
@@ -69,6 +66,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     letterSpacing: 4,
     textTransform: 'uppercase',
+    marginTop: 4,
   },
 });
 

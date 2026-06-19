@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useLayoutEffect } from 'react';
 import { Platform, View, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
@@ -39,7 +39,7 @@ if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
       name: 'Elevate',
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'notification-bell.wav',
+      sound: 'notification_bell',
       vibrationPattern: [0, 150, 100, 150],
       enableLights: true,
       lightColor: '#FFFFFF',
@@ -56,6 +56,10 @@ function AppContent() {
   const navigationRef = useRef<any>(null);
   const { showNotification } = useInAppNotification();
   usePushNotifications(isAuthenticated);
+
+  useLayoutEffect(() => {
+    ExpoSplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   const getNavigationAction = (type: string) => {
     switch (type) {

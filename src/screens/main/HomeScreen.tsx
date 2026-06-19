@@ -286,7 +286,7 @@ const HomeScreen = () => {
 
   const showNotif = useCallback((next: CompanionMessage) => {
     setNotifMessage(next);
-    Audio.Sound.createAsync(require('../../../assets/notification-bell.wav'), { shouldPlay: true })
+    Audio.Sound.createAsync(require('../../../assets/notification_bell.wav'), { shouldPlay: true })
       .then(({ sound }) => { setTimeout(() => sound.unloadAsync().catch(() => {}), 3000); })
       .catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
