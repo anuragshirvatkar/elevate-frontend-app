@@ -22,6 +22,7 @@ import BrainIcon from '../../../assets/brain.svg';
 import CraftIcon from '../../../assets/craft.svg';
 import PurityIcon from '../../../assets/purity.svg';
 import { playPopUpSound } from '../../utils/playSound';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 import { getActivityDisplayName } from '../../utils/activityDisplayName';
 import { InAppNotificationBanner } from '../common/InAppNotification';
 import { useInAppNotification } from '../../context/InAppNotificationContext';
@@ -70,7 +71,7 @@ interface LogState {
   power: Record<string, ActivityEntry>;
   craft: Record<string, ActivityEntry>;
   purity: { relapseCount: string; reasonIfNo: string };
-  mind: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }>;
+  mind: Record<string, { didUserDo: boolean; title: string; description: string; images: string[]; reasonIfNo?: string }>;
 }
 
 // per-activity phase after "Yes" or "No"
@@ -80,6 +81,11 @@ const STEP_ORDER_ALL: Step[] = ['power', 'craft', 'purity', 'mind', 'done'];
 const STEP_ORDER_FEMALE: Step[] = ['power', 'craft', 'mind', 'done'];
 
 const NO_REASON_OPTIONS = ['Tired', 'No time', 'Forgot', 'No motivation', 'Sick', 'Other'];
+const REST_DAY_REASON = 'Rest day';
+
+const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const isRestDayFor = (date: Date, restDays: string[]) =>
+  restDays.includes(DAY_KEYS[date.getDay()]);
 
 const HOURS_OPTIONS = [
   { label: '< 45', minutes: 40 },
@@ -115,6 +121,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [mindReadonlyBooks, setMindReadonlyBooks] = useState<Array<{ userBookId: string; title: string; author?: string }>>([]);
   const allMindBooksRef = useRef<MindSetup['books']>([]);
   const [mindActive, setMindActive] = useState(true);
+  const [restDays, setRestDays] = useState<{ power: string[]; craft: string[] }>({ power: [], craft: [] });
   const { profile } = useUser();
   const minDate = profile?.joinedAt ? new Date(profile.joinedAt) : undefined;
   const isFemale = profile?.gender === 'female';
@@ -140,6 +147,10 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
   const [prefillLocked, setPrefillLocked] = useState(false);
   const [mindHasChanges, setMindHasChanges] = useState(false);
   const [logPrefillKey, setLogPrefillKey] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const handleInputFocus = React.useCallback(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+  }, []);
 
   useEffect(() => {
     if (step === 'mind') setMindHasChanges(false);
@@ -206,6 +217,10 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
           isPrimary: a.isPrimary,
         })).filter((a) => a.name),
       );
+      setRestDays({
+        power: power.status === 'fulfilled' ? (power.value.data.restDays ?? []) : [],
+        craft: craft.status === 'fulfilled' ? (craft.value.data.restDays ?? []) : [],
+      });
       if (mind.status === 'fulfilled') {
         const mindData = mind.value.data;
         isMindActive = mindData.isActive;
@@ -228,7 +243,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     const craftNames: Record<string, string> = {};
     let newPurity: { relapseCount: string; reasonIfNo: string } = { relapseCount: '0', reasonIfNo: '' };
     let hasPurityLog = false;
-    const newMind: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }> = {};
+    const newMind: Record<string, { didUserDo: boolean; title: string; description: string; images: string[]; reasonIfNo?: string }> = {};
 
     try {
       const res = await activitiesApi.getLog(dateStr);
@@ -262,6 +277,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
         } else if (log.section === 'mind' && log.userBookId) {
           newMind[log.userBookId] = {
             didUserDo: log.didUserDo ?? false,
+            title: log.title ?? '',
             description: log.description ?? '',
             images: log.images ?? [],
             reasonIfNo: log.reasonIfNo ?? undefined,
@@ -396,7 +412,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     setPrefillLocked(false);
     setMindHasChanges(true);
     setLogState((prev) => {
-      const existing = prev.mind[id] || { didUserDo: false, description: '', images: [] };
+      const existing = prev.mind[id] || { didUserDo: false, title: '', description: '', images: [] };
       return { ...prev, mind: { ...prev.mind, [id]: { ...existing, [field]: value } } };
     });
   };
@@ -405,7 +421,7 @@ const DailyLogModal: React.FC<DailyLogModalProps> = ({ visible, onClose, onCompl
     setPrefillLocked(false);
     setMindHasChanges(true);
     setLogState((prev) => {
-      const existing = prev.mind[id] || { didUserDo: false, description: '', images: [] };
+      const existing = prev.mind[id] || { didUserDo: false, title: '', description: '', images: [] };
       return { ...prev, mind: { ...prev.mind, [id]: { ...existing, images } } };
     });
   };
@@ -627,7 +643,8 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
     let totalPoints = 0;
     let didSubmit = false;
     for (const [bookId, data] of Object.entries(logState.mind)) {
-      const book = mindBooks?.find((b) => b.userBookId === bookId);
+      const book = mindBooks?.find((b) => b.userBookId === bookId)
+        ?? allMindBooksRef.current.find((b) => b.userBookId === bookId);
       if (!book) continue;
       if (data.didUserDo && !data.description?.trim()) continue;
       try {
@@ -635,6 +652,7 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
           section: 'mind',
           userBookId: bookId,
           didUserDo: data.didUserDo,
+          title: data.didUserDo && data.title?.trim() ? data.title.trim() : undefined,
           description: data.didUserDo ? data.description.trim() : undefined,
           images: data.images?.length ? data.images : undefined,
           reasonIfNo: !data.didUserDo ? data.reasonIfNo || undefined : undefined,
@@ -738,6 +756,7 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
             </View>
           ) : (
             <ScrollView
+              ref={scrollRef}
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
@@ -760,6 +779,8 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
                   logActivityNames={powerLogNames}
                   onActivePhaseChange={setHasActivePhase}
                   companion={companion}
+                  isRestDay={isRestDayFor(selectedDate, restDays.power)}
+                  onInputFocus={handleInputFocus}
                   onNavigateToPillars={() => {
                     onClose();
                     onNavigateToPillars?.('power');
@@ -778,6 +799,8 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
                   logActivityNames={craftLogNames}
                   onActivePhaseChange={setHasActivePhase}
                   companion={companion}
+                  isRestDay={isRestDayFor(selectedDate, restDays.craft)}
+                  onInputFocus={handleInputFocus}
                   onNavigateToPillars={() => {
                     onClose();
                     onNavigateToPillars?.('craft');
@@ -791,6 +814,7 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
                   companion={companion}
                   onCompleteChange={setPurityComplete}
                   initialConfirmed={hadPurityLog}
+                  onInputFocus={handleInputFocus}
                 />
               )}
               {step === 'mind' && (
@@ -808,6 +832,7 @@ type SectionSubmitResult = { points: number; didSubmit: boolean };
                   }}
                   onActivePhaseChange={setHasActivePhase}
                   onPendingChange={setHasPendingInput}
+                  onInputFocus={handleInputFocus}
                 />
               )}
             </ScrollView>
@@ -906,7 +931,7 @@ const CompanionBubble: React.FC<{
         },
       ]}>
         {companion?.image && (
-          <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+          <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
         )}
       </View>
     </View>
@@ -925,7 +950,7 @@ const TweetSummary: React.FC<{
     <View style={styles.tweetRow}>
       <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
         {companion?.image && (
-          <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+          <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
         )}
       </View>
       <View style={styles.tweetBody}>
@@ -1078,11 +1103,14 @@ const ActivityLogStep: React.FC<{
   logActivityNames?: Record<string, string>;
   resetKey?: string;
   prefillKey?: number;
+  isRestDay?: boolean;
+  onInputFocus?: () => void;
   onActivePhaseChange?: (active: boolean) => void;
   onSecondActivityAdded?: () => void;
   onNavigateToPillars?: () => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, section, companion, question, hoursQuestion, emptyText, logActivityNames = {}, resetKey, prefillKey = 0, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => {
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, section, companion, question, hoursQuestion, emptyText, logActivityNames = {}, resetKey, prefillKey = 0, isRestDay = false, onInputFocus, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => {
   const activityLabel = (name: string) => getActivityDisplayName(section, name);
+  const reasonOptions = isRestDay ? [REST_DAY_REASON, ...NO_REASON_OPTIONS] : NO_REASON_OPTIONS;
   const [allActivities, setAllActivities] = useState<SectionActivity[]>(activities);
 
   const effectiveActivities = allActivities;
@@ -1287,7 +1315,8 @@ const ActivityLogStep: React.FC<{
     } else if (phase === 'reason') {
       // Don't clear reason — pre-select from existing logState
       const existingReason = logState[id]?.reasonIfNo || '';
-      const isPredefined = NO_REASON_OPTIONS.filter((r) => r !== 'Other').includes(existingReason);
+      const isPredefined = existingReason === REST_DAY_REASON
+        || NO_REASON_OPTIONS.filter((r) => r !== 'Other').includes(existingReason);
       setDonePhases(['yesno']);
       setActivePhase({ id, phase: 'reason' });
       if (isPredefined) {
@@ -1484,9 +1513,12 @@ const ActivityLogStep: React.FC<{
                       placeholderTextColor={colors.textMuted}
                       value={s?.description || ''}
                       onChangeText={(v) => onUpdate(activePhase.id, 'description', v)}
+                      onFocus={onInputFocus}
                       multiline
                       autoFocus
                       scrollEnabled
+                      showsVerticalScrollIndicator
+                      persistentScrollbar
                     />
                     <TouchableOpacity style={styles.notesDoneBtn} onPress={handleNotesDone}>
                       <Text style={styles.inputDoneText}>Done</Text>
@@ -1518,7 +1550,7 @@ const ActivityLogStep: React.FC<{
                   <Text style={styles.questionText}>?</Text>
                 </View>
                 <View style={styles.relapseCauses}>
-                  {NO_REASON_OPTIONS.map((reason) => (
+                  {reasonOptions.map((reason) => (
                     <TouchableOpacity
                       key={reason}
                       style={[styles.relapseCauseChip, selectedReason === reason && styles.relapseCauseChipActive]}
@@ -1539,6 +1571,7 @@ const ActivityLogStep: React.FC<{
                         placeholderTextColor={colors.textMuted}
                         value={customReasonText}
                         onChangeText={setCustomReasonText}
+                        onFocus={onInputFocus}
                         autoFocus
                       />
                       <TouchableOpacity style={styles.inputTickBtn} onPress={handleCustomReasonConfirm}>
@@ -1649,10 +1682,12 @@ const PowerStep: React.FC<{
   resetKey?: string;
   prefillKey?: number;
   companion: CompanionDto | null;
+  isRestDay?: boolean;
+  onInputFocus?: () => void;
   onActivePhaseChange?: (active: boolean) => void;
   onSecondActivityAdded?: () => void;
   onNavigateToPillars?: () => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, logActivityNames, resetKey, prefillKey, companion, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => (
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, logActivityNames, resetKey, prefillKey, companion, isRestDay, onInputFocus, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
@@ -1664,6 +1699,8 @@ const PowerStep: React.FC<{
     resetKey={resetKey}
     prefillKey={prefillKey}
     companion={companion}
+    isRestDay={isRestDay}
+    onInputFocus={onInputFocus}
     question="Did you go to"
     hoursQuestion="Nice! How many hours did you spend on"
     emptyText="No power activities configured."
@@ -1683,10 +1720,12 @@ const CraftStep: React.FC<{
   resetKey?: string;
   prefillKey?: number;
   companion: CompanionDto | null;
+  isRestDay?: boolean;
+  onInputFocus?: () => void;
   onActivePhaseChange?: (active: boolean) => void;
   onSecondActivityAdded?: () => void;
   onNavigateToPillars?: () => void;
-}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, logActivityNames, resetKey, prefillKey, companion, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => (
+}> = ({ activities, logState, onUpdate, onUpdateImages, onRemoveActivity, logActivityNames, resetKey, prefillKey, companion, isRestDay, onInputFocus, onActivePhaseChange, onSecondActivityAdded, onNavigateToPillars }) => (
   <ActivityLogStep
     activities={activities}
     logState={logState}
@@ -1698,6 +1737,8 @@ const CraftStep: React.FC<{
     resetKey={resetKey}
     prefillKey={prefillKey}
     companion={companion}
+    isRestDay={isRestDay}
+    onInputFocus={onInputFocus}
     question="Did you work on"
     hoursQuestion="Nice! How many hours did you put into"
     emptyText="No craft activities configured."
@@ -1774,7 +1815,8 @@ const PurityStep: React.FC<{
   companion: CompanionDto | null;
   onCompleteChange?: (complete: boolean) => void;
   initialConfirmed?: boolean;
-}> = ({ state, onUpdate, companion, onCompleteChange, initialConfirmed }) => {
+  onInputFocus?: () => void;
+}> = ({ state, onUpdate, companion, onCompleteChange, initialConfirmed, onInputFocus }) => {
   const [showHelp, setShowHelp] = React.useState(false);
 
   // null = user hasn't made a choice this session (fall back to pre-existing props)
@@ -1951,6 +1993,7 @@ const PurityStep: React.FC<{
                         placeholderTextColor={colors.textMuted}
                         value={state.reasonIfNo}
                         onChangeText={(v) => onUpdate('reasonIfNo', v)}
+                        onFocus={onInputFocus}
                         autoFocus
                       />
                       <TouchableOpacity
@@ -1979,7 +2022,7 @@ const PurityStep: React.FC<{
 const MindStep: React.FC<{
   books: Array<{ userBookId: string; title: string; author?: string }>;
   readonlyBooks?: Array<{ userBookId: string; title: string; author?: string }>;
-  logState: Record<string, { didUserDo: boolean; description: string; images: string[]; reasonIfNo?: string }>;
+  logState: Record<string, { didUserDo: boolean; title: string; description: string; images: string[]; reasonIfNo?: string }>;
   onUpdate: (id: string, field: string, value: boolean | string) => void;
   onUpdateImages: (id: string, images: string[]) => void;
   companion: CompanionDto | null;
@@ -1987,7 +2030,8 @@ const MindStep: React.FC<{
   onBookMarkedComplete?: (bookId: string) => void;
   onActivePhaseChange?: (active: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
-}> = ({ books, readonlyBooks = [], logState, onUpdate, onUpdateImages, companion, onAddBooks, onBookMarkedComplete, onActivePhaseChange, onPendingChange }) => {
+  onInputFocus?: () => void;
+}> = ({ books, readonlyBooks = [], logState, onUpdate, onUpdateImages, companion, onAddBooks, onBookMarkedComplete, onActivePhaseChange, onPendingChange, onInputFocus }) => {
   const isBookLogComplete = (bookId: string) => {
     const entry = logState[bookId];
     return !!entry && (!entry.didUserDo || !!entry.description?.trim());
@@ -2003,6 +2047,7 @@ const MindStep: React.FC<{
   const [notesBookId, setNotesBookId] = useState<string | null>(null);
   const [imagesBookId, setImagesBookId] = useState<string | null>(null);
   const [reasonBookId, setReasonBookId] = useState<string | null>(null);
+  const [notesRequireTitle, setNotesRequireTitle] = useState(true);
   const [selectedMindReason, setSelectedMindReason] = useState('');
   const [showCustomMindReason, setShowCustomMindReason] = useState(false);
   const [customMindReasonText, setCustomMindReasonText] = useState('');
@@ -2013,6 +2058,7 @@ const MindStep: React.FC<{
       return entry?.didUserDo && !entry.description?.trim();
     });
     if (needsNotes && !notesBookId && !imagesBookId && !reasonBookId) {
+      setNotesRequireTitle(true);
       setNotesBookId(needsNotes.userBookId);
       onActivePhaseChange?.(true);
     }
@@ -2022,13 +2068,19 @@ const MindStep: React.FC<{
   const tweetIds = activeId ? [...confirmedIds, activeId] : confirmedIds;
   const unanswered = books.filter((b) => !tweetIds.includes(b.userBookId) && b.userBookId !== reasonBookId);
   const hasAnyLogForDay = alreadyLoggedIds.length > 0;
+  const allBooks = [...books, ...readonlyBooks];
+  const isEditingYesNo = !!selectedId
+    && !confirmedIds.includes(selectedId)
+    && !notesBookId
+    && !imagesBookId
+    && !reasonBookId;
   // One book per day — only prompt when no book has been logged yet for this day
   const canPromptNewBook = !hasAnyLogForDay && !activeId && !reasonBookId;
-  const currentForYesNo = canPromptNewBook
-    ? books.find((b) => b.userBookId === selectedId) ?? null
+  const currentForYesNo = isEditingYesNo || canPromptNewBook
+    ? allBooks.find((b) => b.userBookId === selectedId) ?? books[0] ?? null
     : null;
-  const notesBook = notesBookId ? books.find((b) => b.userBookId === notesBookId) : null;
-  const imagesBook = imagesBookId ? books.find((b) => b.userBookId === imagesBookId) : null;
+  const notesBook = notesBookId ? allBooks.find((b) => b.userBookId === notesBookId) : null;
+  const imagesBook = imagesBookId ? allBooks.find((b) => b.userBookId === imagesBookId) : null;
 
   // active = hide Next entirely (yes/no, notes, or reason phase — mandatory interaction)
   // pending = show but disable Next (images phase — optional but must confirm or skip)
@@ -2041,6 +2093,7 @@ const MindStep: React.FC<{
     if (!currentForYesNo) return;
     onUpdate(currentForYesNo.userBookId, 'didUserDo', didDo);
     if (didDo) {
+      setNotesRequireTitle(true);
       setNotesBookId(currentForYesNo.userBookId);
       notify(null, currentForYesNo.userBookId, imagesBookId, reasonBookId);
     } else {
@@ -2062,8 +2115,10 @@ const MindStep: React.FC<{
 
   const handleNotesDone = () => {
     if (!notesBookId) return;
+    const title = logState[notesBookId]?.title?.trim();
     const description = logState[notesBookId]?.description?.trim();
     if (!description) return;
+    if (notesRequireTitle && !title) return;
     const id = notesBookId;
     setImagesBookId(id);
     setNotesBookId(null);
@@ -2117,6 +2172,7 @@ const MindStep: React.FC<{
   const handleEditNotes = (id: string) => {
     setConfirmedIds((prev) => prev.filter((cid) => cid !== id));
     setImagesBookId(null);
+    setNotesRequireTitle(false);
     setNotesBookId(id);
     notify(selectedId, id, null, reasonBookId);
   };
@@ -2129,9 +2185,13 @@ const MindStep: React.FC<{
         const status = s.didUserDo ? 'Read ✓' : `Skipped${s.reasonIfNo ? ` · ${s.reasonIfNo}` : ''}`;
         return (
           <React.Fragment key={`readonly-${book.userBookId}`}>
-            <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} />
+            <TouchableOpacity activeOpacity={0.7} onPress={() => handleEdit(book.userBookId)}>
+              <TweetSummary companion={companion} name={book.title} subtitle="Did you read it?" status={status} editable />
+            </TouchableOpacity>
             {!!s.didUserDo && (
-              <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s.description || '—'} />
+              <TouchableOpacity activeOpacity={0.7} onPress={() => handleEditNotes(book.userBookId)}>
+                <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s.title ? `${s.title}\n${s.description || '—'}` : (s.description || '—')} editable />
+              </TouchableOpacity>
             )}
           </React.Fragment>
         );
@@ -2158,7 +2218,7 @@ const MindStep: React.FC<{
             </TouchableOpacity>
             {!!s?.didUserDo && (confirmedIds.includes(id) || imagesBookId === id) && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEditNotes(id)}>
-                <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s?.description || '—'} editable />
+                <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s?.title ? `${s.title}\n${s?.description || '—'}` : (s?.description || '—')} editable />
               </TouchableOpacity>
             )}
           </React.Fragment>
@@ -2167,8 +2227,9 @@ const MindStep: React.FC<{
 
       {/* Notes phase */}
       {notesBook && (() => {
+        const titleText = logState[notesBook.userBookId]?.title?.trim() || '';
         const notesText = logState[notesBook.userBookId]?.description?.trim() || '';
-        const notesValid = notesText.length > 0;
+        const notesValid = notesText.length > 0 && (!notesRequireTitle || titleText.length > 0);
         return (
         <CompanionBubble companion={companion}>
           <View style={styles.questionRow}>
@@ -2177,6 +2238,17 @@ const MindStep: React.FC<{
             <Text style={styles.questionText}>?</Text>
           </View>
           <View style={styles.hoursWrap}>
+            <TextInput
+              style={[styles.hoursInput, styles.descInput, styles.mindTitleInput]}
+              placeholder={notesRequireTitle ? 'Title (required)' : 'Title (optional)'}
+              placeholderTextColor={colors.textMuted}
+              value={logState[notesBook.userBookId]?.title || ''}
+              onChangeText={(v) => onUpdate(notesBook.userBookId, 'title', v)}
+              onFocus={onInputFocus}
+              autoFocus
+              maxLength={120}
+              returnKeyType="next"
+            />
             <View style={styles.notesRow}>
               <TextInput
                 style={[styles.hoursInput, styles.descInput, styles.notesInput]}
@@ -2184,9 +2256,11 @@ const MindStep: React.FC<{
                 placeholderTextColor={colors.textMuted}
                 value={logState[notesBook.userBookId]?.description || ''}
                 onChangeText={(v) => onUpdate(notesBook.userBookId, 'description', v)}
+                onFocus={onInputFocus}
                 multiline
-                autoFocus
                 scrollEnabled
+                showsVerticalScrollIndicator
+                persistentScrollbar
               />
               <TouchableOpacity
                 style={[styles.notesDoneBtn, !notesValid && styles.notesDoneBtnDisabled]}
@@ -2220,7 +2294,7 @@ const MindStep: React.FC<{
 
       {/* Reason for not reading */}
       {reasonBookId && (() => {
-        const reasonBook = books.find((b) => b.userBookId === reasonBookId);
+        const reasonBook = allBooks.find((b) => b.userBookId === reasonBookId);
         if (!reasonBook) return null;
         return (
           <CompanionBubble companion={companion}>
@@ -2266,6 +2340,7 @@ const MindStep: React.FC<{
       {/* Yes / No question */}
       {currentForYesNo && (
         <>
+          {canPromptNewBook && (
           <TouchableOpacity
             style={[styles.finishedBookBtn, { marginTop: 5 }]}
             onPress={() => onAddBooks?.()}
@@ -2275,6 +2350,7 @@ const MindStep: React.FC<{
             <Ionicons name="checkmark-circle" size={13} color={colors.background} />
             <Text style={styles.finishedBookBtnText}>Mark book as complete</Text>
           </TouchableOpacity>
+          )}
         <CompanionBubble companion={companion}>
           <View style={styles.questionRow}>
             <Text style={styles.questionText}>Did you read </Text>
@@ -2361,7 +2437,7 @@ const styles = StyleSheet.create({
   },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.lg, paddingTop: 0, gap: spacing.md, paddingBottom: spacing.xl },
+  scrollContent: { paddingHorizontal: spacing.md, paddingTop: 0, gap: spacing.md, paddingBottom: spacing.xl },
   completedTick: {
     position: 'absolute',
     bottom: -1,
@@ -2506,10 +2582,11 @@ const styles = StyleSheet.create({
   skipBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   skipBtnText: { ...typography.bodySmall, color: colors.textSecondary },
   imageDoneTickBtn: { paddingHorizontal: spacing.sm },
-  descInput: { minHeight: 60, textAlignVertical: 'top' },
+  descInput: { minHeight: 72, textAlignVertical: 'top', borderWidth: 1, borderColor: colors.textMuted, borderRadius: radius.sm, backgroundColor: 'transparent', marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: 10, fontSize: 16, lineHeight: 22 },
   inputDoneText: { fontSize: 12, fontWeight: '700' as const, color: colors.success },
   notesRow: { gap: 8 },
-  notesInput: { width: '100%', maxHeight: 130 },
+  notesInput: { alignSelf: 'stretch', maxHeight: 160 },
+  mindTitleInput: { minHeight: 0, marginBottom: 8, paddingVertical: 10, fontWeight: '700', fontSize: 17, lineHeight: 22 },
   notesDoneBtn: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.success },
   notesDoneBtnDisabled: { opacity: 0.35, borderColor: colors.textMuted },
   inputDoneTextDisabled: { color: colors.textMuted },

@@ -812,7 +812,15 @@ const PillarsScreen = () => {
       const bookTitle = mind.books.find((b) => b.userBookId === userBookId)?.title ?? '';
       await openSummaryView(userBookId, bookTitle, pdfFilename);
     } catch (err: any) {
-      showAlert('Error', err?.response?.data?.message || 'Not enough reflections to generate summary.');
+      // Generation can take a while; a client-side timeout/network error does NOT
+      // necessarily mean it failed on the server. Refresh so a summary that did get
+      // saved shows up, and avoid the misleading "not enough reflections" wording.
+      await loadAllRef.current?.();
+      showAlert(
+        'Error',
+        err?.response?.data?.message ||
+          'Something went wrong while generating the summary. If it doesn\'t appear shortly, please try again.',
+      );
     } finally {
       setGeneratingSummary(null);
     }
@@ -1010,7 +1018,7 @@ const PillarsScreen = () => {
         <View style={s.rowGroup}>
           <Text style={s.groupLabel}>Preferred Time</Text>
           <TouchableOpacity style={s.row} onPress={() => openTimePicker(tab)} activeOpacity={0.7}>
-            <Text style={s.rowLabel}>Workout time</Text>
+            <Text style={s.rowLabel}>{section === 'craft' ? 'Work time' : 'Workout time'}</Text>
             <View style={s.rowRight}>
               <Text style={s.rowValue}>{formatDisplay(state.preferredTime)}</Text>
               <Ionicons name="chevron-forward" size={14} color="#444" />

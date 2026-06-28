@@ -25,6 +25,7 @@ import { activitiesApi } from '../../api/activities';
 import { companionApi } from '../../api';
 import { journalsApi } from '../../api/journals';
 import type { ActivityLogEntry, CompanionMessage, TodayGoalResponse } from '../../types';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -415,7 +416,7 @@ const HomeScreen = () => {
   const totalPoints = profile?.stats?.totalPoints || 0;
   const username = profile?.username || user?.email?.split('@')[0] || 'Champion';
   const selectedAvatar = profile?.avatars?.find(a => a.isSelected);
-  const profileImageUrl = selectedAvatar?.profileImageUrl;
+  const profileImageUrl = optimizeCloudinaryUrl(selectedAvatar?.profileImageUrl, 72);
   const avatarSlug = selectedAvatar?.slug || 'riven';
   const avatarBorderColor = getAvatarBorderColor(avatarSlug);
   const avatarHasShadow = getAvatarHasShadow(avatarSlug);
@@ -475,7 +476,10 @@ const HomeScreen = () => {
           <TouchableOpacity style={styles.companionBtn} onPress={openCompanionMessages}>
             {(() => {
               const activeCompanion = profile?.companions?.find((c: any) => c.isActive) ?? profile?.companions?.[0];
-              const imgUrl = (activeCompanion as any)?.imageUrl || (activeCompanion as any)?.image;
+              const imgUrl = optimizeCloudinaryUrl(
+                (activeCompanion as any)?.imageUrl || (activeCompanion as any)?.image,
+                44,
+              );
               return imgUrl ? (
                 <View style={[
                   styles.companionAvatarWrapper,

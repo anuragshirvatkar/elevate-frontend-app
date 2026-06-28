@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { colors, spacing, typography } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
+import { optimizeCloudinaryUrl } from '../utils/cloudinary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -72,7 +73,7 @@ const WelcomeBackScreen: React.FC<RootStackScreenProps<'WelcomeBack'>> = ({ navi
         >
           {companionImage ? (
             <Image
-              source={{ uri: companionImage }}
+              source={{ uri: optimizeCloudinaryUrl(companionImage, SCREEN_WIDTH) }}
               style={styles.companionImage}
               resizeMode="cover"
             />

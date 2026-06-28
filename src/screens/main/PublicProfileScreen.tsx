@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Image, Linking,
@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { profileApi } from '../../api';
 import { colors, spacing, typography } from '../../theme';
 import type { DrawerParamList } from '../../navigation/types';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 type RouteProps = RouteProp<DrawerParamList, 'PublicProfile'>;
 
@@ -71,19 +72,38 @@ const PublicProfileScreen = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    profileApi.getPublic(userId)
-      .then(({ data }) => setProfile(data))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+  useLayoutEffect(() => {
+    setProfile(null);
+    setLoading(true);
+    setError(false);
   }, [userId]);
 
-  const selectedAvatar = profile?.avatars?.find((a) => a.isSelected);
-  const displayName = profile?.username || username || 'User';
+  useEffect(() => {
+    let cancelled = false;
+    profileApi.getPublic(userId)
+      .then(({ data }) => {
+        if (!cancelled) setProfile(data);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const isLoadedProfile = profile?.id === userId;
+  const selectedAvatar = isLoadedProfile ? profile?.avatars?.find((a) => a.isSelected) : undefined;
+  const displayName = (isLoadedProfile ? profile?.username : null) || username || 'User';
   const initials = displayName[0]?.toUpperCase() || '?';
-  const streaks = profile?.stats?.currentStreaks;
-  const longestStreaks = profile?.stats?.longestStreaks;
-  const achievements = (profile?.achievements || []).filter((a) => a.isUnlocked);
+  const streaks = isLoadedProfile ? profile?.stats?.currentStreaks : undefined;
+  const longestStreaks = isLoadedProfile ? profile?.stats?.longestStreaks : undefined;
+  const achievements = isLoadedProfile
+    ? (profile?.achievements || []).filter((a) => a.isUnlocked)
+    : [];
+
+  const showLoader = loading || !isLoadedProfile;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -96,7 +116,7 @@ const PublicProfileScreen = () => {
         <Text style={styles.headerTitle}>{displayName}</Text>
       </View>
 
-      {loading ? (
+      {showLoader ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.text} />
         </View>
@@ -112,7 +132,7 @@ const PublicProfileScreen = () => {
             <View style={styles.identityTop}>
               <View style={styles.avatarCircle}>
                 {selectedAvatar?.profileImageUrl ? (
-                  <Image source={{ uri: selectedAvatar.profileImageUrl }} style={styles.avatarImg} />
+                  <Image source={{ uri: optimizeCloudinaryUrl(selectedAvatar.profileImageUrl, 72) }} style={styles.avatarImg} />
                 ) : (
                   <Text style={styles.avatarLetter}>{initials}</Text>
                 )}
@@ -126,9 +146,6 @@ const PublicProfileScreen = () => {
                   </View>
                 </View>
                 <Text style={styles.infoMuted}>Joined {fmtDate(profile?.joinedAt)}</Text>
-                {profile?.lastSeenAt && (
-                  <Text style={styles.infoMuted}>Last seen {fmtDate(profile.lastSeenAt)}</Text>
-                )}
               </View>
             </View>
           </View>
@@ -182,7 +199,7 @@ const PublicProfileScreen = () => {
               <View style={styles.avatarCardRow}>
                 <View style={styles.avatarBodyWrap}>
                   {selectedAvatar.fullBodyImageUrl ? (
-                    <Image source={{ uri: selectedAvatar.fullBodyImageUrl }} style={styles.avatarFullBody} resizeMode="cover" />
+                    <Image source={{ uri: optimizeCloudinaryUrl(selectedAvatar.fullBodyImageUrl, 160) }} style={styles.avatarFullBody} resizeMode="cover" />
                   ) : (
                     <View style={styles.avatarBodyPlaceholder}>
                       <Ionicons name="person" size={44} color="#333" />
@@ -190,7 +207,7 @@ const PublicProfileScreen = () => {
                   )}
                   {selectedAvatar.profileImageUrl && (
                     <View style={styles.avatarPicOverlay}>
-                      <Image source={{ uri: selectedAvatar.profileImageUrl }} style={styles.avatarPicSmall} />
+                      <Image source={{ uri: optimizeCloudinaryUrl(selectedAvatar.profileImageUrl, 44) }} style={styles.avatarPicSmall} />
                     </View>
                   )}
                 </View>
@@ -225,7 +242,7 @@ const PublicProfileScreen = () => {
                   <View style={styles.achievementIconWrap}>
                     {a.iconUrl ? (
                       <Image
-                        source={{ uri: a.iconUrl }}
+                        source={{ uri: optimizeCloudinaryUrl(a.iconUrl, 48) }}
                         style={styles.achievementIconImg}
                         resizeMode="cover"
                         tintColor={IMAGE_ACHIEVEMENTS.includes(a.name) ? undefined : '#ffffff'}

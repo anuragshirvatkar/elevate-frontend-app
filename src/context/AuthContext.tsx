@@ -103,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const projectId: string =
               Constants.easConfig?.projectId ??
               Constants.expoConfig?.extra?.eas?.projectId ??
-              'd5bb338c-2b88-4a31-aa51-69d9408a4b6b';
+              'dbc4bd37-6778-4889-ad66-069e7187eac0';
             const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
             notificationsApi.registerDevice(tokenData.data).catch(() => {});
           }

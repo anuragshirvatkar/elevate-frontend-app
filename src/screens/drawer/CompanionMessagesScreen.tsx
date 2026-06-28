@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Image,
+  ActivityIndicator, RefreshControl, Image, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,9 +10,15 @@ import { companionApi } from '../../api';
 import { useUser } from '../../context/UserContext';
 import { colors, spacing, typography } from '../../theme';
 import type { CompanionMessage } from '../../types';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 // Same 3 as AchievementsScreen — real raster images, skip tint
 const IMAGE_ACHIEVEMENTS = ['Opened the Book', 'Thinking Begins', 'Strong Mind'];
+
+// Fixed pixel size for the achievement/avatar circle. Percentage dimensions +
+// tintColor render blank on Android, so we compute a concrete size instead.
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const ICON_CIRCLE_SIZE = Math.min(Math.round(SCREEN_WIDTH * 0.55), 240);
 
 // For ACHIEVEMENT / AVATAR_UNLOCKED types the imageUrl in metadata is a small icon
 // rendered inside a circle (same style as AchievementsScreen).
@@ -80,9 +86,10 @@ const CompanionMessagesScreen = () => {
     type.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   const renderItem = ({ item }: { item: CompanionMessage }) => {
-    const imageUrl = (item.metadata as any)?.imageUrl as string | undefined;
+    const rawImageUrl = (item.metadata as any)?.imageUrl as string | undefined;
     const isIconType = ICON_TYPES.includes(item.type);
-    const companionImageUrl = getCompanionImage(item);
+    const imageUrl = optimizeCloudinaryUrl(rawImageUrl, isIconType ? ICON_CIRCLE_SIZE : SCREEN_WIDTH);
+    const companionImageUrl = optimizeCloudinaryUrl(getCompanionImage(item), 44);
 
     return (
       <View style={[styles.row, !item.isRead && styles.rowUnread]}>
@@ -279,9 +286,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   iconCircleWrap: {
-    width: '80%',
-    aspectRatio: 1,
-    borderRadius: 999,
+    width: ICON_CIRCLE_SIZE,
+    height: ICON_CIRCLE_SIZE,
+    borderRadius: ICON_CIRCLE_SIZE / 2,
     overflow: 'hidden',
     backgroundColor: '#111',
     borderWidth: 1,
@@ -289,7 +296,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 4,
   },
-  iconCircleImg: { width: '100%', height: '100%' },
+  iconCircleImg: { width: ICON_CIRCLE_SIZE, height: ICON_CIRCLE_SIZE },
   rowTitle: { color: colors.text, fontWeight: '700', fontSize: 14 },
 
   msgImage: {

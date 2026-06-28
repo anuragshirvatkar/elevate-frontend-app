@@ -12,6 +12,7 @@ import type { OnboardingStackScreenProps } from '../../navigation/types';
 import { setupApi, booksApi } from '../../api';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 import type { BookDto, CompanionDto } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
@@ -501,7 +502,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>
@@ -586,7 +587,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -615,7 +616,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>
@@ -656,7 +657,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -679,7 +680,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -708,7 +709,7 @@ const SetupMindScreen: React.FC<OnboardingStackScreenProps<'SetupMind'>> = ({ na
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>

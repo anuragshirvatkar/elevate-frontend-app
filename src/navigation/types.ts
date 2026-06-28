@@ -34,6 +34,11 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
+export type BookRecordsStackParamList = {
+  BookRecordsList: undefined;
+  BookRecordDetail: { bookId: string; bookTitle: string };
+};
+
 export type DrawerParamList = {
   Tabs: undefined;
   Leaderboard: { section?: string } | undefined;
@@ -43,6 +48,8 @@ export type DrawerParamList = {
   PointRules: undefined;
   About: undefined;
   CompanionMessages: undefined;
+  BookRecords: undefined;
+  IconPreview: undefined;
   JournalDetail: { entry?: JournalEntry };
   RecordDetail: { date: string; logs: ActivityLogEntry[]; section?: string };
   EditProfile: { scrollToSection?: string; avatarId?: string } | undefined;

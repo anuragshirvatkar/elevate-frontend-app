@@ -16,11 +16,13 @@ import PublicProfileScreen from '../screens/main/PublicProfileScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
 import AnalyticsScreen from '../screens/drawer/AnalyticsScreen';
 import PillarsScreen from '../screens/drawer/PillarsScreen';
+import BookRecordsNavigator from './BookRecordsNavigator';
 import AchievementsScreen from '../screens/drawer/AchievementsScreen';
 import CompanionMessagesScreen from '../screens/drawer/CompanionMessagesScreen';
 import SupportScreen from '../screens/drawer/SupportScreen';
 import PointRulesScreen from '../screens/drawer/PointRulesScreen';
 import AboutScreen from '../screens/drawer/AboutScreen';
+import IconPreviewScreen from '../screens/drawer/IconPreviewScreen';
 import CustomDrawerContent from '../components/navigation/CustomDrawerContent';
 import { MainBootProvider } from '../context/MainBootContext';
 
@@ -84,9 +86,11 @@ const MainNavigator = () => (
     <Drawer.Screen name="Pillars" component={PillarsScreen} />
     <Drawer.Screen name="Achievements" component={AchievementsScreen} />
     <Drawer.Screen name="CompanionMessages" component={CompanionMessagesScreen} />
+    <Drawer.Screen name="BookRecords" component={BookRecordsNavigator} />
     <Drawer.Screen name="Support" component={SupportScreen} />
     <Drawer.Screen name="PointRules" component={PointRulesScreen} />
     <Drawer.Screen name="About" component={AboutScreen} />
+    <Drawer.Screen name="IconPreview" component={IconPreviewScreen} />
     <Drawer.Screen name="JournalDetail" component={JournalDetailScreen} />
     <Drawer.Screen name="RecordDetail" component={RecordDetailScreen} />
     <Drawer.Screen name="EditProfile" component={EditProfileScreen} />

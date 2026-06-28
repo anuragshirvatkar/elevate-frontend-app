@@ -14,6 +14,7 @@ import type { JournalEntry, CompanionDto } from '../../types';
 import { format, parseISO } from 'date-fns';
 import { playPopUpSound } from '../../utils/playSound';
 import { CompanionPointsPopup, COMPANION_GAIN_MSGS } from '../../components/common/CompanionPointsPopup';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 type JournalDetailRouteParams = { entry?: JournalEntry; isNewEntry?: boolean };
 type JournalDetailRouteProp = RouteProp<{ JournalDetail: JournalDetailRouteParams }, 'JournalDetail'>;
@@ -49,7 +50,7 @@ const TweetSummary = ({ companion, name, subtitle, status, onEdit }: TweetSummar
     <View style={styles.tweetRow}>
       <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
         {companion?.image && (
-          <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+          <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
         )}
       </View>
       <View style={styles.tweetBody}>
@@ -124,7 +125,7 @@ const CompanionBubble = ({ companion, children }: CompanionBubbleProps) => (
         },
       ]}>
         {companion?.image && (
-          <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+          <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
         )}
       </View>
     </View>
@@ -237,6 +238,10 @@ const JournalDetailScreen = () => {
   const handleEditClose = () => {
     setEditSection(null);
   };
+
+  const handleInputFocus = useCallback(() => {
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 120);
+  }, []);
 
   const openEditSection = (section: EditSection) => {
     setEditSection(section);
@@ -364,8 +369,12 @@ const JournalDetailScreen = () => {
           placeholderTextColor={colors.textMuted}
           value={value}
           onChangeText={setter}
+          onFocus={handleInputFocus}
           multiline
           autoFocus
+          scrollEnabled
+          showsVerticalScrollIndicator
+          persistentScrollbar
           textAlignVertical="top"
         />
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
@@ -484,8 +493,12 @@ const JournalDetailScreen = () => {
             placeholderTextColor={colors.textMuted}
             value={win}
             onChangeText={setWin}
+            onFocus={handleInputFocus}
             multiline
             autoFocus
+            scrollEnabled
+            showsVerticalScrollIndicator
+            persistentScrollbar
             textAlignVertical="top"
           />
           <TouchableOpacity style={styles.nextBtn} onPress={goNext} activeOpacity={0.85}>
@@ -503,8 +516,12 @@ const JournalDetailScreen = () => {
             placeholderTextColor={colors.textMuted}
             value={lesson}
             onChangeText={setLesson}
+            onFocus={handleInputFocus}
             multiline
             autoFocus
+            scrollEnabled
+            showsVerticalScrollIndicator
+            persistentScrollbar
             textAlignVertical="top"
           />
           <TouchableOpacity style={styles.nextBtn} onPress={goNext} activeOpacity={0.85}>
@@ -522,8 +539,12 @@ const JournalDetailScreen = () => {
             placeholderTextColor={colors.textMuted}
             value={mission}
             onChangeText={setMission}
+            onFocus={handleInputFocus}
             multiline
             autoFocus
+            scrollEnabled
+            showsVerticalScrollIndicator
+            persistentScrollbar
             textAlignVertical="top"
           />
           <TouchableOpacity style={styles.saveBtn} onPress={handleNewEntrySave} activeOpacity={0.85}>
@@ -611,13 +632,14 @@ const styles = StyleSheet.create({
 
   // Scroll content
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md, paddingBottom: spacing.xl },
+  scrollContent: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.md, paddingBottom: spacing.xl },
 
   // Edit section (collapsible)
   editSection: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     marginTop: spacing.sm,
     marginBottom: spacing.sm,
   },
@@ -666,14 +688,16 @@ const styles = StyleSheet.create({
   moodLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   moodLabel: { ...typography.caption, color: colors.textMuted, fontSize: 10 },
 
-  // Input
+  // Input — clean, subtle border (Twitter/Reddit style), spans full width
   textInput: {
     ...typography.body, color: colors.text,
-    backgroundColor: colors.background,
-    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.inputBorder,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minHeight: 40,
+    backgroundColor: 'transparent',
+    borderWidth: 1, borderColor: colors.textMuted, borderRadius: radius.sm,
+    marginHorizontal: -spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: 10, minHeight: 40,
+    fontSize: 16, lineHeight: 22,
   },
-  textInputMultiline: { minHeight: 100, textAlignVertical: 'top' },
+  textInputMultiline: { minHeight: 110, maxHeight: 180, textAlignVertical: 'top' },
 
   // Save button
   saveBtn: {
@@ -709,7 +733,8 @@ const styles = StyleSheet.create({
   bubble: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     width: '100%',
   },
   questionText: { ...typography.body, color: colors.text, fontWeight: '600', marginBottom: spacing.md },

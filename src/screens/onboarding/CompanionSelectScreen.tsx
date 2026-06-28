@@ -20,6 +20,7 @@ import { colors, spacing, typography } from '../../theme';
 import { useAlert } from '../../context/AlertContext';
 import type { CompanionDto } from '../../types';
 import { getCompanionColor, sortCompanions } from '../../utils/companions';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 const CompanionSelectScreen: React.FC<
   OnboardingStackScreenProps<'CompanionSelect'>
@@ -264,7 +265,7 @@ const CompanionSelectScreen: React.FC<
                         </View>
                       )}
                       <Image
-                        source={{ uri: item.image }}
+                        source={{ uri: optimizeCloudinaryUrl(item.image, 360) }}
                         style={[styles.companionImage, !imageLoaded[item.id] && styles.imageHidden]}
                         resizeMode="contain"
                         onLoadEnd={() => setImageLoaded(prev => ({ ...prev, [item.id]: true }))}
@@ -311,7 +312,7 @@ const CompanionSelectScreen: React.FC<
               >
                 {item.image ? (
                   <Image
-                    source={{ uri: item.image }}
+                    source={{ uri: optimizeCloudinaryUrl(item.image, 48) }}
                     style={styles.avatarThumbImage}
                     resizeMode="cover"
                   />

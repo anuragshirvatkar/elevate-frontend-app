@@ -8,6 +8,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { profileApi } from '../../api';
 import { colors, spacing, typography } from '../../theme';
 import type { Achievement } from '../../types';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 const IMAGE_ACHIEVEMENTS = ['Opened the Book', 'Thinking Begins', 'Strong Mind'];
 
@@ -39,7 +40,7 @@ const AchievementsScreen = () => {
           <Ionicons name="lock-closed" size={16} color="#444" />
         ) : a.iconUrl ? (
           <Image
-            source={{ uri: a.iconUrl }}
+            source={{ uri: optimizeCloudinaryUrl(a.iconUrl, 40) }}
             style={styles.iconImg}
             resizeMode="cover"
             tintColor={IMAGE_ACHIEVEMENTS.includes(a.name) ? undefined : '#ffffff'}

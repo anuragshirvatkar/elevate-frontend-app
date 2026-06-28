@@ -13,6 +13,7 @@ import { setupApi, activitiesApi } from '../../api';
 import type { ActivityDto, CompanionDto } from '../../types';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 import { getActivityDisplayName, CRAFT_COMMON_ORDER } from '../../utils/activityDisplayName';
 import { useAlert } from '../../context/AlertContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -437,7 +438,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>
@@ -514,7 +515,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -543,7 +544,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>
@@ -577,7 +578,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -600,7 +601,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -627,7 +628,7 @@ const SetupCraftScreen: React.FC<OnboardingStackScreenProps<'SetupCraft'>> = ({ 
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>

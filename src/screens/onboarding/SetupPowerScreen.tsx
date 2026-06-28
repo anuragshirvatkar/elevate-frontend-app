@@ -13,6 +13,7 @@ import type { OnboardingStackScreenProps } from '../../navigation/types';
 import { setupApi, activitiesApi } from '../../api';
 import Button from '../../components/common/Button';
 import { colors, spacing, typography, radius } from '../../theme';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 import { useAlert } from '../../context/AlertContext';
 import type { ActivityDto, CompanionDto } from '../../types';
 import BicepIcon from '../../../assets/bicep.svg';
@@ -506,7 +507,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                   ]}>
                     {companion?.image && (
                       <Image
-                        source={{ uri: companion.image }}
+                        source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }}
                         style={styles.companionImage}
                         resizeMode="cover"
                       />
@@ -624,7 +625,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -653,7 +654,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>
@@ -692,7 +693,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -715,7 +716,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                   <View style={styles.tweetRow}>
                     <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
                       {companion?.image && (
-                        <Image source={{ uri: companion.image }} style={styles.tweetAvatarImg} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 44) }} style={styles.tweetAvatarImg} resizeMode="cover" />
                       )}
                     </View>
                     <View style={styles.tweetBody}>
@@ -744,7 +745,7 @@ const SetupPowerScreen: React.FC<OnboardingStackScreenProps<'SetupPower'>> = ({ 
                     elevation: 40,
                   }]}>
                     {companion?.image && (
-                      <Image source={{ uri: companion.image }} style={styles.companionImage} resizeMode="cover" />
+                      <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 200) }} style={styles.companionImage} resizeMode="cover" />
                     )}
                   </View>
                 </Animated.View>

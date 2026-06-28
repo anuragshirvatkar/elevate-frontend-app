@@ -9,8 +9,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { leaderboardApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
+import { format } from 'date-fns';
 import { colors, spacing, typography } from '../../theme';
-import type { LeaderboardEntry, LeaderboardPeriod, LeaderboardSection } from '../../types';
+import type { LeaderboardDateRange, LeaderboardEntry, LeaderboardPeriod, LeaderboardSection } from '../../types';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 const GOLD = '#FFD700';
 const SILVER = '#C0C0C0';
@@ -32,22 +34,45 @@ const SECTIONS: { label: string; value: LeaderboardSection }[] = [
 ];
 
 const PODIUM_COLOR: Record<number, string> = { 1: GOLD, 2: SILVER, 3: BRONZE };
-const PODIUM_AVATAR: Record<number, number> = { 1: 72, 2: 54, 3: 54 };
+
+const medalColor = (rank: number) => PODIUM_COLOR[rank];
+
+const PERIOD_LABEL: Record<string, string> = {
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  yearly: 'Yearly',
+  all_time: 'All Time',
+};
+
+const formatDateRange = (range: LeaderboardDateRange | null): { label: string; range: string } | null => {
+  if (!range) return null;
+  const label = PERIOD_LABEL[range.period] ?? 'Leaderboard';
+
+  if (!range.start) {
+    return { label, range: 'Since the beginning' };
+  }
+
+  const start = new Date(range.start);
+  const end = new Date(range.end);
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const startStr = format(start, sameYear ? 'MMM d' : 'MMM d, yyyy');
+  const endStr = format(end, 'MMM d, yyyy');
+  return { label, range: `${startStr} – ${endStr}` };
+};
 
 interface PodiumBoxProps {
-  entry?: LeaderboardEntry;
-  rank: number;
+  entry: LeaderboardEntry;
   isMe: boolean;
   onPress?: () => void;
 }
 
-const AVATAR_AREA_HEIGHT = 92; // fixed height so all circle bottoms align
+const AVATAR_AREA_HEIGHT = 92;
 
-const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe, onPress }) => {
-  const color = PODIUM_COLOR[rank];
-  const avatarSize = PODIUM_AVATAR[rank];
-  const isEmpty = !entry;
-  const pressable = !isEmpty && !isMe && !!onPress;
+const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, isMe, onPress }) => {
+  const rank = entry.rank;
+  const color = medalColor(rank) ?? '#666';
+  const avatarSize = rank === 1 ? 72 : 54;
+  const pressable = !isMe && !!onPress;
   const ringSize = avatarSize + 10;
 
   return (
@@ -56,7 +81,6 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe, onPress }) => 
       onPress={pressable ? onPress : undefined}
       style={styles.podiumColumn}
     >
-      {/* Fixed-height area — ring sits at bottom so all bottoms align */}
       <View style={styles.podiumAvatarArea}>
         <View
           style={[
@@ -78,33 +102,30 @@ const PodiumBox: React.FC<PodiumBoxProps> = ({ entry, rank, isMe, onPress }) => 
             styles.podiumAvatarInner,
             { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 },
           ]}>
-            {!isEmpty && entry.profileImageUrl ? (
+            {entry.profileImageUrl ? (
               <Image
-                source={{ uri: entry.profileImageUrl }}
+                source={{ uri: optimizeCloudinaryUrl(entry.profileImageUrl, 72) }}
                 style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }}
               />
             ) : (
               <Text style={[styles.podiumAvatarText, { fontSize: rank === 1 ? 26 : 20 }]}>
-                {isEmpty ? '?' : (entry.name[0]?.toUpperCase() || '?')}
+                {entry.name[0]?.toUpperCase() || '?'}
               </Text>
             )}
           </View>
         </View>
       </View>
 
-      {/* Rank pill */}
       <View style={[styles.podiumRankPill, { backgroundColor: color }]}>
         <Text style={styles.podiumRankPillText}>#{rank}</Text>
       </View>
 
-      {/* Name */}
       <Text style={styles.podiumName} numberOfLines={1}>
-        {isEmpty ? '—' : entry.name}
+        {entry.name}{isMe ? ' (you)' : ''}
       </Text>
 
-      {/* Points */}
       <Text style={[styles.podiumPoints, { color }]}>
-        {isEmpty ? '—' : entry.points.toLocaleString()}
+        {entry.points.toLocaleString()}
       </Text>
     </TouchableOpacity>
   );
@@ -118,6 +139,7 @@ const LeaderboardScreen = () => {
   const isFemale = profile?.gender === 'female';
   const [rankings, setRankings] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<{ rank: number; points: number } | null>(null);
+  const [dateRange, setDateRange] = useState<LeaderboardDateRange | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const initialSectionApplied = useRef(false);
@@ -136,6 +158,7 @@ const LeaderboardScreen = () => {
       const { data } = await leaderboardApi.get({ period: p, section: s });
       setRankings(data.rankings);
       setMyRank(data.currentUser);
+      setDateRange(data.dateRange ?? null);
     } catch {}
     setLoading(false);
     setRefreshing(false);
@@ -193,34 +216,60 @@ const LeaderboardScreen = () => {
   };
 
   const myUserId = user?.id || '';
-  const podiumEntries = rankings.filter(e => e.rank <= 3);
-  const hasPodiumTies = podiumEntries.length !== new Set(podiumEntries.map(e => e.rank)).size;
-  const top3 = [1, 2, 3].map(r => rankings.find(e => e.rank === r));
-  const rest = hasPodiumTies
-    ? rankings.filter(e => e.userId !== myUserId)
-    : rankings.filter(e => e.rank > 3 && e.userId !== myUserId);
 
-  const renderRow = ({ item }: { item: LeaderboardEntry }) => {
+  // Top 3 people on podium — ring color follows each entry's rank (handles ties)
+  const podium = rankings.slice(0, 3);
+  // Display order places the top entry in the center (left = 2nd, center = 1st, right = 3rd)
+  const podiumDisplay = podium.length === 3
+    ? [podium[1], podium[0], podium[2]]
+    : podium.length === 2
+      ? [podium[1], podium[0]]
+      : podium;
+  const afterPodium = rankings.slice(3);
+  const tierListEntries = afterPodium.filter((e) => e.rank <= 3);
+  const restEntries = afterPodium.filter((e) => e.rank > 3 && e.userId !== myUserId);
+
+  const isOnPodium = podium.some((e) => e.userId === myUserId);
+  const isInTierList = tierListEntries.some((e) => e.userId === myUserId);
+  const showPinnedMe = !!myRank && !isOnPodium && !isInTierList;
+
+  const myEntry = showPinnedMe
+    ? rankings.find((e) => e.userId === myUserId) || {
+      userId: myUserId,
+      name: 'You',
+      rank: myRank!.rank,
+      points: myRank!.points,
+    }
+    : null;
+
+  const openProfile = (entry: LeaderboardEntry) => {
+    navigation.navigate('PublicProfile', { userId: entry.userId, username: entry.name });
+  };
+
+  const renderLeaderboardRow = (item: LeaderboardEntry, useMedalBadge: boolean) => {
     const isMe = item.userId === myUserId;
-    const tieRankColor = hasPodiumTies && item.rank >= 1 && item.rank <= 3 ? PODIUM_COLOR[item.rank] : undefined;
+    const badgeColor = useMedalBadge ? medalColor(item.rank) : undefined;
     return (
       <TouchableOpacity
+        key={item.userId}
         style={[styles.row, isMe && styles.rowMe]}
         activeOpacity={isMe ? 1 : 0.7}
         disabled={isMe}
-        onPress={isMe ? undefined : () => navigation.navigate('PublicProfile', { userId: item.userId, username: item.name })}
+        onPress={isMe ? undefined : () => openProfile(item)}
       >
-        <View style={[styles.rankBadge, tieRankColor ? { backgroundColor: tieRankColor } : null]}>
-          <Text style={[styles.rankBadgeText, tieRankColor ? { color: '#000' } : null]}>#{item.rank}</Text>
+        <View style={[styles.rankBadge, badgeColor ? { backgroundColor: badgeColor } : null]}>
+          <Text style={[styles.rankBadgeText, badgeColor ? { color: '#000' } : null]}>#{item.rank}</Text>
         </View>
         <View style={[styles.rowAvatar, isMe && styles.rowAvatarMe]}>
           {item.profileImageUrl ? (
             <Image
-              source={{ uri: item.profileImageUrl }}
+              source={{ uri: optimizeCloudinaryUrl(item.profileImageUrl, 32) }}
               style={{ width: 32, height: 32, borderRadius: 16 }}
             />
           ) : (
-            <Text style={[styles.rowAvatarText, isMe && { color: '#000' }]}>{item.name[0]?.toUpperCase() || '?'}</Text>
+            <Text style={[styles.rowAvatarText, isMe && { color: '#000' }]}>
+              {item.name[0]?.toUpperCase() || '?'}
+            </Text>
           )}
         </View>
         <Text style={[styles.rowName, isMe && styles.rowNameMe]} numberOfLines={1}>
@@ -233,9 +282,9 @@ const LeaderboardScreen = () => {
     );
   };
 
-  const myEntry = myRank && (hasPodiumTies || myRank.rank > 3)
-    ? rankings.find(e => e.userId === myUserId) || { userId: myUserId, name: 'You', rank: myRank.rank, points: myRank.points }
-    : null;
+  const renderRow = ({ item }: { item: LeaderboardEntry }) => renderLeaderboardRow(item, false);
+
+  const rangeInfo = formatDateRange(dateRange);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -248,43 +297,47 @@ const LeaderboardScreen = () => {
         </TouchableOpacity>
       </View>
 
+      {/* Date range banner */}
+      {rangeInfo && (
+        <View style={styles.rangeBanner}>
+          <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+          <Text style={styles.rangeLabel}>{rangeInfo.label}</Text>
+          <View style={styles.rangeDot} />
+          <Text style={styles.rangeText}>{rangeInfo.range}</Text>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.loadingCenter}>
           <ActivityIndicator color={colors.text} />
         </View>
       ) : (
         <FlatList
-          data={rest}
-          keyExtractor={item => item.userId}
+          data={restEntries}
+          keyExtractor={(item) => item.userId}
           contentContainerStyle={rankings.length === 0 ? styles.emptyContainer : undefined}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
           ListHeaderComponent={
             rankings.length > 0 ? (
               <>
-                {/* Podium — only when no ties */}
-                {!hasPodiumTies && (
+                {podium.length > 0 && (
                   <View style={styles.podiumRow}>
-                    {[2, 1, 3].map(rank => {
-                      const entry = top3[rank - 1];
-                      const isMe = entry?.userId === myUserId;
+                    {podiumDisplay.map((entry) => {
+                      const isMe = entry.userId === myUserId;
                       return (
                         <PodiumBox
-                          key={rank}
-                          rank={rank}
+                          key={entry.userId}
                           entry={entry}
                           isMe={isMe}
-                          onPress={
-                            entry && !isMe
-                              ? () => navigation.navigate('PublicProfile', { userId: entry.userId, username: entry.name })
-                              : undefined
-                          }
+                          onPress={!isMe ? () => openProfile(entry) : undefined}
                         />
                       );
                     })}
                   </View>
                 )}
 
-                {/* Pinned: current user's rank — shown right after podium if not in top 3 */}
+                {tierListEntries.map((entry) => renderLeaderboardRow(entry, true))}
+
                 {myEntry && (
                   <>
                     <View style={styles.myEntryRow}>
@@ -294,11 +347,13 @@ const LeaderboardScreen = () => {
                       <View style={[styles.rowAvatar, { borderColor: '#000', backgroundColor: '#e0e0e0' }]}>
                         {myEntry.profileImageUrl ? (
                           <Image
-                            source={{ uri: myEntry.profileImageUrl }}
+                            source={{ uri: optimizeCloudinaryUrl(myEntry.profileImageUrl, 32) }}
                             style={{ width: 32, height: 32, borderRadius: 16 }}
                           />
                         ) : (
-                          <Text style={[styles.rowAvatarText, { color: '#000' }]}>{myEntry.name[0]?.toUpperCase() || '?'}</Text>
+                          <Text style={[styles.rowAvatarText, { color: '#000' }]}>
+                            {myEntry.name[0]?.toUpperCase() || '?'}
+                          </Text>
                         )}
                       </View>
                       <Text style={styles.myEntryName} numberOfLines={1}>{myEntry.name} (you)</Text>
@@ -387,6 +442,36 @@ const styles = StyleSheet.create({
   },
   title: { ...typography.h3, color: colors.text },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Date range banner
+  rangeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 9,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: '#121212',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  rangeLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+    letterSpacing: 0.3,
+  },
+  rangeDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.textMuted,
+  },
+  rangeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
 
   // Filter icon
   filterBtn: { padding: 6, position: 'relative' },

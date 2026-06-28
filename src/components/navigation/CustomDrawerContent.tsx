@@ -7,6 +7,7 @@ import { colors, spacing, typography, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useAlert } from '../../context/AlertContext';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 interface MenuItem {
   label: string;
@@ -16,6 +17,7 @@ interface MenuItem {
 
 const MENU_ITEMS: MenuItem[] = [
   { label: 'Pillars', icon: 'layers-outline', screen: 'Pillars' },
+  { label: 'Book Records', icon: 'book-outline', screen: 'BookRecords' },
   { label: 'Achievements', icon: 'medal-outline', screen: 'Achievements' },
   { label: 'Support', icon: 'help-circle-outline', screen: 'Support' },
   { label: 'Point Rules', icon: 'star-outline', screen: 'PointRules' },
@@ -29,7 +31,7 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
   const insets = useSafeAreaInsets();
 
   const selectedAvatar = profile?.avatars?.find((a: any) => a.isSelected);
-  const profileImageUrl = selectedAvatar?.profileImageUrl;
+  const profileImageUrl = optimizeCloudinaryUrl(selectedAvatar?.profileImageUrl, 48);
 
   const confirmLogout = () => {
     showAlert(
@@ -44,6 +46,10 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
 
   const navigate = (screen: string) => {
     props.navigation.navigate(screen as never);
+  };
+
+  const openIconPreview = () => {
+    props.navigation.navigate('IconPreview' as never);
   };
 
   return (
@@ -83,6 +89,12 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Icon preview */}
+      <TouchableOpacity style={styles.testBtn} onPress={openIconPreview} activeOpacity={0.7}>
+        <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+        <Text style={styles.testText}>Icon Preview</Text>
+      </TouchableOpacity>
 
       {/* Logout */}
       <TouchableOpacity style={styles.logoutBtn} onPress={confirmLogout} activeOpacity={0.7}>
@@ -137,6 +149,16 @@ const styles = StyleSheet.create({
   },
   menuLabel: { ...typography.body, color: colors.text, flex: 1 },
   chevron: { marginLeft: 'auto' },
+  testBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  testText: { ...typography.body, color: colors.textSecondary },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',

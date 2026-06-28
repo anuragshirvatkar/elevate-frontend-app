@@ -113,35 +113,38 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
+  // When the app is opened by tapping a notification, navigate to the
+  // relevant screen but do NOT re-show the in-app banner — the user already
+  // saw it in the system tray, and re-showing it (often without the companion
+  // image) just looks like a broken duplicate.
+  const navigateForNotification = (data: Record<string, unknown>) => {
+    const type = data?.type as string | undefined;
+    if (type && navigationRef.current) {
+      const action = getNavigationAction(type);
+      if (action) navigationRef.current.dispatch(action);
+    }
+  };
+
   useEffect(() => {
     Notifications.getLastNotificationResponseAsync().then(response => {
       if (!response) return;
-      const { title, body, data } = response.notification.request.content;
-      if (title) showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
+      const { data } = response.notification.request.content;
+      navigateForNotification((data ?? {}) as Record<string, unknown>);
     });
 
     const sub = Notifications.addNotificationResponseReceivedListener(response => {
-      const { title, body, data } = response.notification.request.content;
-      if (title) showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
-      const type = (data?.type) as string | undefined;
-      if (type && navigationRef.current) {
-        const action = getNavigationAction(type);
-        if (action) navigationRef.current.dispatch(action);
-      }
+      const { data } = response.notification.request.content;
+      navigateForNotification((data ?? {}) as Record<string, unknown>);
     });
     return () => sub.remove();
   }, []);
 
+  // Clear any lingering tray notifications when the app comes to the
+  // foreground, without re-surfacing them as in-app banners.
   useEffect(() => {
     const handleAppStateChange = async (nextState: string) => {
       if (nextState !== 'active') return;
       try {
-        const presented = await Notifications.getPresentedNotificationsAsync();
-        if (presented.length === 0) return;
-        const latest = presented[presented.length - 1];
-        const { title, body, data } = latest.request.content;
-        if (!title) return;
-        showCard(title, body ?? '', (data ?? {}) as Record<string, unknown>);
         await Notifications.dismissAllNotificationsAsync();
       } catch {}
     };

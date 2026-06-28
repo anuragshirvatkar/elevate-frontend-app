@@ -38,6 +38,7 @@ import { useAlert } from '../../context/AlertContext';
 import { colors, spacing, typography } from '../../theme';
 import type { Avatar, AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
 import { sortAvatars } from '../../utils/avatars';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 import { AvatarWeeklyProgressBars } from '../../components/avatars/AvatarWeeklyProgressBars';
 
 const renderCompactProgress = (progress: AvatarProgress) => {
@@ -200,7 +201,7 @@ const ProfileScreen = () => {
             <View style={{ position: 'relative' }}>
               <View style={styles.avatarCircle}>
                 {selectedAvatar?.profileImageUrl ? (
-                  <Image source={{ uri: selectedAvatar.profileImageUrl }} style={styles.avatarImg} />
+                  <Image source={{ uri: optimizeCloudinaryUrl(selectedAvatar.profileImageUrl, 72) }} style={styles.avatarImg} />
                 ) : (
                   <Text style={styles.avatarLetter}>{initials}</Text>
                 )}
@@ -258,7 +259,7 @@ const ProfileScreen = () => {
               <View style={[styles.avatarCardRow, { marginBottom: spacing.lg }]}>
                 <View style={styles.avatarBodyWrap}>
                   {selectedAvatar.fullBodyImageUrl ? (
-                    <Image source={{ uri: selectedAvatar.fullBodyImageUrl }} style={styles.avatarFullBody} resizeMode="cover" />
+                    <Image source={{ uri: optimizeCloudinaryUrl(selectedAvatar.fullBodyImageUrl, AVATAR_CARD_W) }} style={styles.avatarFullBody} resizeMode="cover" />
                   ) : (
                     <View style={styles.avatarBodyPlaceholder}>
                       <Ionicons name="person" size={44} color="#333" />
@@ -266,7 +267,7 @@ const ProfileScreen = () => {
                   )}
                   {selectedAvatar.profileImageUrl && (
                     <View style={styles.avatarPicOverlay}>
-                      <Image source={{ uri: selectedAvatar.profileImageUrl }} style={styles.avatarPicSmall} />
+                      <Image source={{ uri: optimizeCloudinaryUrl(selectedAvatar.profileImageUrl, 44) }} style={styles.avatarPicSmall} />
                     </View>
                   )}
                 </View>
@@ -318,7 +319,7 @@ const ProfileScreen = () => {
                       <View style={[styles.avCarouselImgWrap, { width: AVATAR_CARD_W }]}>
                         {av.fullBodyImageUrl ? (
                           <Image
-                            source={{ uri: av.fullBodyImageUrl }}
+                            source={{ uri: optimizeCloudinaryUrl(av.fullBodyImageUrl, AVATAR_CARD_W) }}
                             style={[styles.avCarouselImg, { width: AVATAR_CARD_W }, isLocked && styles.dimmed]}
                             resizeMode="cover"
                           />
@@ -387,7 +388,7 @@ const ProfileScreen = () => {
               {/* Image square — like CompanionSelectScreen card */}
               <View style={styles.companionImgWrap}>
                 {activeCompanion.imageUrl ? (
-                  <Image source={{ uri: activeCompanion.imageUrl }} style={styles.companionImg} resizeMode="cover" />
+                  <Image source={{ uri: optimizeCloudinaryUrl(activeCompanion.imageUrl, SCREEN_WIDTH) }} style={styles.companionImg} resizeMode="cover" />
                 ) : (
                   <View style={styles.companionImgPlaceholder}>
                     <Ionicons name="people" size={36} color="#333" />
@@ -451,7 +452,7 @@ const ProfileScreen = () => {
             <View style={styles.modalBody}>
               {/* Left: full body image */}
               {storyModal?.fullBodyImageUrl ? (
-                <Image source={{ uri: storyModal.fullBodyImageUrl }} style={styles.modalFullBody} resizeMode="cover" />
+                <Image source={{ uri: optimizeCloudinaryUrl(storyModal.fullBodyImageUrl, SCREEN_WIDTH) }} style={styles.modalFullBody} resizeMode="cover" />
               ) : (
                 <View style={styles.modalFullBodyPlaceholder}>
                   <Ionicons name="person" size={48} color="#333" />

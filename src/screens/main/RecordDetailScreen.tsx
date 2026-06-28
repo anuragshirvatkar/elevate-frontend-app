@@ -111,6 +111,12 @@ const RecordDetailScreen = () => {
             {log?.bookTitle ? <Capsule icon="book-outline" text={log.bookTitle} /> : null}
             <Capsule icon={didDo ? 'checkmark-circle-outline' : 'close-circle-outline'} text={!log ? '—' : didDo ? 'Yes' : 'No'} dim={!log} />
           </View>
+          {didDo && log?.title ? (
+            <View style={styles.descSection}>
+              <Text style={styles.sectionLabel}>Title</Text>
+              <Text style={styles.titleText}>{log.title}</Text>
+            </View>
+          ) : null}
           {didDo && log?.description ? (
             <View style={styles.descSection}>
               <Text style={styles.sectionLabel}>Notes</Text>
@@ -293,6 +299,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     lineHeight: 20,
+  },
+  titleText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
   },
 
   imagesSection: {

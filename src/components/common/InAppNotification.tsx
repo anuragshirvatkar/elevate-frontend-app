@@ -5,6 +5,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme';
 import { useInAppNotification, type InAppNotificationData } from '../../context/InAppNotificationContext';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 const DISPLAY_DURATION = 5000;
 
@@ -97,7 +98,7 @@ export const InAppNotificationBanner: React.FC<BannerProps> = ({ useTopInset = f
         >
           {notification.companionImageUrl ? (
             <Image
-              source={{ uri: notification.companionImageUrl }}
+              source={{ uri: optimizeCloudinaryUrl(notification.companionImageUrl, 48) }}
               style={styles.avatar}
             />
           ) : (

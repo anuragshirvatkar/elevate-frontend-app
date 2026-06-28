@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { colors, spacing, typography, radius } from '../../theme';
 import type { CompanionDto } from '../../types';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 
 const getCompanionColor = (name: string): string => {
   const colorMap: Record<string, string> = {
@@ -62,7 +63,7 @@ export const CompanionPointsPopup: React.FC<CompanionPointsPopupProps> = ({
           { borderColor: getCompanionColor(companion?.name || '') + '99' },
         ]}>
           {companion?.image && (
-            <Image source={{ uri: companion.image }} style={styles.pointsCompanionImg} resizeMode="cover" />
+            <Image source={{ uri: optimizeCloudinaryUrl(companion.image, 96) }} style={styles.pointsCompanionImg} resizeMode="cover" />
           )}
         </View>
         <Text style={[styles.pointsBadge, { color: badgeColor }]}>

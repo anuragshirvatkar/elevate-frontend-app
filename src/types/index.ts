@@ -133,6 +133,7 @@ export interface LogActivityDto {
   didUserDo?: boolean;
   hours?: number;
   relapseCount?: number;
+  title?: string;
   description?: string;
   reasonIfNo?: string;
   date: string;
@@ -156,11 +157,35 @@ export interface ActivityLogEntry {
   didUserDo?: boolean;
   hours?: number;
   relapseCount?: number;
+  title?: string;
   description?: string;
   reasonIfNo?: string;
   images: string[];
   date: string;
   points?: number;
+}
+
+// ─── Book Records ──────────────────────────────────────────────────────────
+export interface BookWithRecords {
+  userBookId: string;
+  title: string;
+  author?: string | null;
+  recordCount: number;
+  lastEntryDate?: string | null;
+  isCompleted: boolean;
+}
+
+export interface BookRecord {
+  id: string;
+  date: string;
+  title?: string | null;
+  description: string;
+}
+
+export interface BookRecordsResponse {
+  bookId: string;
+  bookTitle: string;
+  records: BookRecord[];
 }
 
 // ─── Activity Logs ─────────────────────────────────────────────────────────
@@ -311,9 +336,16 @@ export interface LeaderboardEntry {
   points: number;
 }
 
+export interface LeaderboardDateRange {
+  period: string;
+  start: string | null;
+  end: string;
+}
+
 export interface LeaderboardResponse {
   rankings: LeaderboardEntry[];
   currentUser: { rank: number; points: number };
+  dateRange?: LeaderboardDateRange;
 }
 
 // ─── Profile ───────────────────────────────────────────────────────────────

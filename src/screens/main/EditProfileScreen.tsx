@@ -16,6 +16,7 @@ import { colors, spacing, typography } from '../../theme';
 import type { Avatar, SocialLink, CompanionDto, AvatarProgress, WeeklyAvatarProgress, PurityAvatarProgress } from '../../types';
 import { sortCompanions } from '../../utils/companions';
 import { sortAvatars } from '../../utils/avatars';
+import { optimizeCloudinaryUrl } from '../../utils/cloudinary';
 import { AvatarWeeklyProgressBars } from '../../components/avatars/AvatarWeeklyProgressBars';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -540,7 +541,7 @@ const EditProfileScreen = () => {
                     <View style={[styles.avatarCardImgWrap, { width: CARD_WIDTH }]}>
                       {item.fullBodyImageUrl ? (
                         <Image
-                          source={{ uri: item.fullBodyImageUrl }}
+                          source={{ uri: optimizeCloudinaryUrl(item.fullBodyImageUrl, CARD_WIDTH) }}
                           style={[styles.avatarCardImg, { width: CARD_WIDTH }, isLocked && styles.dimmed]}
                           resizeMode="cover"
                         />
@@ -626,7 +627,7 @@ const EditProfileScreen = () => {
                       activeOpacity={0.85}
                     >
                       {item.imageUrl || item.image ? (
-                        <Image source={{ uri: item.imageUrl ?? item.image }} style={[styles.companionImg, { width: CARD_WIDTH }]} resizeMode="cover" />
+                        <Image source={{ uri: optimizeCloudinaryUrl(item.imageUrl ?? item.image, CARD_WIDTH) }} style={[styles.companionImg, { width: CARD_WIDTH }]} resizeMode="cover" />
                       ) : (
                         <View style={[styles.companionImgPlaceholder, { width: CARD_WIDTH }]}>
                           <Ionicons name="people" size={48} color="#444" />
