@@ -945,7 +945,9 @@ const TweetSummary: React.FC<{
   subtitle?: string;
   status: string;
   editable?: boolean;
-}> = ({ companion, name, subtitle, status, editable }) => (
+  statusOnNewLine?: boolean;
+  statusNumberOfLines?: number;
+}> = ({ companion, name, subtitle, status, editable, statusOnNewLine, statusNumberOfLines }) => (
   <View style={styles.tweet}>
     <View style={styles.tweetRow}>
       <View style={[styles.tweetAvatar, { borderColor: getCompanionColor(companion?.name || '') + '80' }]}>
@@ -958,9 +960,16 @@ const TweetSummary: React.FC<{
           <Text style={styles.tweetName}>{name}</Text>
           {editable && <Text style={styles.tweetEdit}>✎</Text>}
         </View>
-        <Text style={styles.tweetDetail}>
-          {subtitle ? `${subtitle}  ·  ` : ''}{status}
-        </Text>
+        {statusOnNewLine ? (
+          <>
+            {!!subtitle && <Text style={styles.tweetDetail}>{subtitle}</Text>}
+            <Text style={styles.tweetDetail} numberOfLines={statusNumberOfLines}>{status}</Text>
+          </>
+        ) : (
+          <Text style={styles.tweetDetail} numberOfLines={statusNumberOfLines}>
+            {subtitle ? `${subtitle}  ·  ` : ''}{status}
+          </Text>
+        )}
       </View>
     </View>
   </View>
@@ -2190,7 +2199,15 @@ const MindStep: React.FC<{
             </TouchableOpacity>
             {!!s.didUserDo && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEditNotes(book.userBookId)}>
-                <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s.title ? `${s.title}\n${s.description || '—'}` : (s.description || '—')} editable />
+                <TweetSummary
+                  companion={companion}
+                  name={book.title}
+                  subtitle="How did it go?"
+                  status={s.title ? `${s.title}\n${s.description || '—'}` : (s.description || '—')}
+                  statusOnNewLine
+                  statusNumberOfLines={3}
+                  editable
+                />
               </TouchableOpacity>
             )}
           </React.Fragment>
@@ -2218,7 +2235,15 @@ const MindStep: React.FC<{
             </TouchableOpacity>
             {!!s?.didUserDo && (confirmedIds.includes(id) || imagesBookId === id) && (
               <TouchableOpacity activeOpacity={0.7} onPress={() => handleEditNotes(id)}>
-                <TweetSummary companion={companion} name={book.title} subtitle="How did it go?" status={s?.title ? `${s.title}\n${s?.description || '—'}` : (s?.description || '—')} editable />
+                <TweetSummary
+                  companion={companion}
+                  name={book.title}
+                  subtitle="How did it go?"
+                  status={s?.title ? `${s.title}\n${s?.description || '—'}` : (s?.description || '—')}
+                  statusOnNewLine
+                  statusNumberOfLines={3}
+                  editable
+                />
               </TouchableOpacity>
             )}
           </React.Fragment>

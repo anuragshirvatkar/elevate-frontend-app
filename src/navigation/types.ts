@@ -49,7 +49,6 @@ export type DrawerParamList = {
   About: undefined;
   CompanionMessages: undefined;
   BookRecords: undefined;
-  IconPreview: undefined;
   JournalDetail: { entry?: JournalEntry };
   RecordDetail: { date: string; logs: ActivityLogEntry[]; section?: string };
   EditProfile: { scrollToSection?: string; avatarId?: string } | undefined;

@@ -22,7 +22,6 @@ import CompanionMessagesScreen from '../screens/drawer/CompanionMessagesScreen';
 import SupportScreen from '../screens/drawer/SupportScreen';
 import PointRulesScreen from '../screens/drawer/PointRulesScreen';
 import AboutScreen from '../screens/drawer/AboutScreen';
-import IconPreviewScreen from '../screens/drawer/IconPreviewScreen';
 import CustomDrawerContent from '../components/navigation/CustomDrawerContent';
 import { MainBootProvider } from '../context/MainBootContext';
 
@@ -90,7 +89,6 @@ const MainNavigator = () => (
     <Drawer.Screen name="Support" component={SupportScreen} />
     <Drawer.Screen name="PointRules" component={PointRulesScreen} />
     <Drawer.Screen name="About" component={AboutScreen} />
-    <Drawer.Screen name="IconPreview" component={IconPreviewScreen} />
     <Drawer.Screen name="JournalDetail" component={JournalDetailScreen} />
     <Drawer.Screen name="RecordDetail" component={RecordDetailScreen} />
     <Drawer.Screen name="EditProfile" component={EditProfileScreen} />

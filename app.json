@@ -2,7 +2,7 @@
   "expo": {
     "name": "Elevate",
     "slug": "elevate-frontend",
-    "version": "1.0.43",
+    "version": "1.0.47",
     "orientation": "portrait",
     "icon": "./assets/elevate-logo.png",
     "userInterfaceStyle": "dark",
@@ -24,7 +24,7 @@
         "android.permission.RECORD_AUDIO"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 43
+      "versionCode": 47
     },
     "web": {
       "favicon": "./assets/elevate-logo.png"
@@ -41,7 +41,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/elevate-logo.png",
+          "icon": "./assets/notification-icon.png",
           "color": "#ffffff",
           "sounds": [
             "./assets/notification_bell.wav"
@@ -63,7 +63,14 @@
           "android": {
             "targetSdkVersion": 35,
             "compileSdkVersion": 35,
-            "enableCoreLibraryDesugaring": true
+            "buildToolsVersion": "35.0.0",
+            "ndkVersion": "27.1.12297006",
+            "enableCoreLibraryDesugaring": true,
+            "packagingOptions": {
+              "jniLibs": {
+                "useLegacyPackaging": false
+              }
+            }
           }
         }
       ]

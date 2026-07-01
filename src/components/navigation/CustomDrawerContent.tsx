@@ -48,10 +48,6 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
     props.navigation.navigate(screen as never);
   };
 
-  const openIconPreview = () => {
-    props.navigation.navigate('IconPreview' as never);
-  };
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
@@ -89,12 +85,6 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
           </TouchableOpacity>
         ))}
       </ScrollView>
-
-      {/* Icon preview */}
-      <TouchableOpacity style={styles.testBtn} onPress={openIconPreview} activeOpacity={0.7}>
-        <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
-        <Text style={styles.testText}>Icon Preview</Text>
-      </TouchableOpacity>
 
       {/* Logout */}
       <TouchableOpacity style={styles.logoutBtn} onPress={confirmLogout} activeOpacity={0.7}>
@@ -149,16 +139,6 @@ const styles = StyleSheet.create({
   },
   menuLabel: { ...typography.body, color: colors.text, flex: 1 },
   chevron: { marginLeft: 'auto' },
-  testBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  testText: { ...typography.body, color: colors.textSecondary },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
